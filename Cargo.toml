@@ -1,0 +1,24 @@
+[package]
+name = "blackhole"
+version = "0.1.0"
+edition = "2021"
+authors = ["Abdullah"]
+description = "A fast, cross-platform dependency and build artifact cleaner"
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+ratatui = "0.29"
+crossterm = { version = "0.28", features = ["event-stream"] }
+walkdir = "2.5"
+rayon = "1.10"
+trash = "5.2"
+chrono = "0.4"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+crossbeam-channel = "0.5"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
