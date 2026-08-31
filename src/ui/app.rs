@@ -38,6 +38,7 @@ pub enum DeletionState {
 pub struct App {
     pub roots: Vec<PathBuf>,
     pub allowed_ecosystems: Option<HashSet<Ecosystem>>,
+    pub include_cloud: bool,
     pub artifacts: Vec<DiscoveredArtifact>,
     pub selected_table_index: usize,
     pub is_scanning: bool,
@@ -54,10 +55,15 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(roots: Vec<PathBuf>, allowed_ecosystems: Option<HashSet<Ecosystem>>) -> Self {
+    pub fn new(
+        roots: Vec<PathBuf>,
+        allowed_ecosystems: Option<HashSet<Ecosystem>>,
+        include_cloud: bool,
+    ) -> Self {
         let mut app = Self {
             roots,
             allowed_ecosystems,
+            include_cloud,
             artifacts: Vec::new(),
             selected_table_index: 0,
             is_scanning: false,
@@ -97,6 +103,7 @@ impl App {
             tx,
             cancel,
             self.allowed_ecosystems.clone(),
+            self.include_cloud,
         );
     }
 
@@ -151,6 +158,7 @@ impl App {
                     true
                 } else {
                     a.project_name.to_lowercase().contains(&q)
+                        || a.display_path.to_lowercase().contains(&q)
                         || a.folder_name.to_lowercase().contains(&q)
                         || a.ecosystem.name().to_lowercase().contains(&q)
                         || a.target_path.to_string_lossy().to_lowercase().contains(&q)

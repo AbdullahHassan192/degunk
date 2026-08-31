@@ -37,7 +37,7 @@ fn test_multi_ecosystem_scanning_and_filtering() {
     // Test Scan ALL
     let (tx, rx) = crossbeam_channel::unbounded();
     let cancel = Arc::new(AtomicBool::new(false));
-    Scanner::start_scan(vec![base.clone()], tx, cancel, None);
+    Scanner::start_scan(vec![base.clone()], tx, cancel, None, false);
 
     let mut found = Vec::new();
     while let Ok(msg) = rx.recv() {
@@ -59,7 +59,7 @@ fn test_multi_ecosystem_scanning_and_filtering() {
 
     let (tx2, rx2) = crossbeam_channel::unbounded();
     let cancel2 = Arc::new(AtomicBool::new(false));
-    Scanner::start_scan(vec![base.clone()], tx2, cancel2, Some(py_set));
+    Scanner::start_scan(vec![base.clone()], tx2, cancel2, Some(py_set), false);
 
     let mut found_py = Vec::new();
     while let Ok(msg) = rx2.recv() {

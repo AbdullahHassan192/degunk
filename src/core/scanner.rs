@@ -16,6 +16,7 @@ pub struct DiscoveredArtifact {
     pub target_path: PathBuf,
     pub project_path: PathBuf,
     pub project_name: String,
+    pub display_path: String,
     pub folder_name: String,
     pub ecosystem: Ecosystem,
     pub rule_label: String,
@@ -54,24 +55,89 @@ pub enum ScanMessage {
     },
 }
 
-/// System and hidden directories that should never be searched
-fn should_skip_dir(name: &str) -> bool {
-    matches!(
-        name,
+/// System, tool-cache, SDK, and cloud storage directories that should never be searched by default
+fn should_skip_dir(name: &str, path: &Path, include_cloud: bool) -> bool {
+    let lower_name = name.to_lowercase();
+
+    // 1. Cloud storage protection (unless explicitly included)
+    if !include_cloud {
+        if lower_name.starts_with("onedrive")
+            || lower_name.starts_with("google drive")
+            || lower_name.starts_with("dropbox")
+            || lower_name.starts_with("icloud")
+            || lower_name.starts_with("box sync")
+            || lower_name.starts_with("creative cloud")
+            || lower_name == ".dropbox.cache"
+        {
+            return true;
+        }
+
+        // Check against system OneDrive environment paths
+        for var_name in ["OneDrive", "OneDriveConsumer", "OneDriveCommercial"] {
+            if let Ok(val) = std::env::var(var_name) {
+                let od_path = PathBuf::from(val);
+                if path.starts_with(&od_path) {
+                    return true;
+                }
+            }
+        }
+    }
+
+    // 2. OS & Version Control internals
+    if matches!(
+        lower_name.as_str(),
         ".git"
             | ".hg"
             | ".svn"
-            | "$Recycle.Bin"
-            | "$RECYCLE.BIN"
-            | ".Trash"
-            | ".Trash-1000"
-            | "System Volume Information"
-            | "Windows"
-            | "Program Files"
-            | "Program Files (x86)"
-            | "AppData"
-            | "Library"
-    )
+            | "$recycle.bin"
+            | ".trash"
+            | ".trash-1000"
+            | "system volume information"
+            | "windows"
+            | "program files"
+            | "program files (x86)"
+            | "appdata"
+            | "library"
+            | "perflogs"
+    ) {
+        return true;
+    }
+
+    // 3. Tool runtimes, package manager caches, IDE extensions, and SDK internals
+    if matches!(
+        lower_name.as_str(),
+        ".vscode-test"
+            | ".vscode"
+            | ".vscode-shared"
+            | ".antigravity"
+            | ".antigravity-ide"
+            | ".cursor"
+            | ".claude"
+            | ".codex"
+            | ".gemini"
+            | ".eclipse"
+            | ".p2"
+            | ".redhat"
+            | ".android"
+            | "flutter sdk"
+            | "flutter_sdk"
+            | ".flutter-sdk"
+            | ".pub-cache"
+            | ".cargo"
+            | ".rustup"
+            | ".m2"
+            | ".conda"
+            | ".bun"
+            | "anaconda3"
+            | "miniconda3"
+            | ".nuget"
+            | "site-packages"
+            | ".cache"
+    ) {
+        return true;
+    }
+
+    false
 }
 
 pub struct Scanner {
@@ -99,6 +165,7 @@ impl Scanner {
         tx: Sender<ScanMessage>,
         cancel_flag: Arc<AtomicBool>,
         allowed_ecosystems: Option<HashSet<Ecosystem>>,
+        include_cloud: bool,
     ) {
         thread::spawn(move || {
             let id_counter = Arc::new(AtomicUsize::new(0));
@@ -111,12 +178,14 @@ impl Scanner {
                 }
                 scan_directory_recursive(
                     &root,
+                    &root,
                     &tx,
                     &cancel_flag,
                     &id_counter,
                     &total_dirs,
                     &pending_tasks,
                     &allowed_ecosystems,
+                    include_cloud,
                 );
             }
 
@@ -137,12 +206,14 @@ impl Scanner {
 
 fn scan_directory_recursive(
     current_dir: &Path,
+    root_dir: &Path,
     tx: &Sender<ScanMessage>,
     cancel_flag: &Arc<AtomicBool>,
     id_counter: &Arc<AtomicUsize>,
     total_dirs: &Arc<AtomicUsize>,
     pending_tasks: &Arc<AtomicUsize>,
     allowed_ecosystems: &Option<HashSet<Ecosystem>>,
+    include_cloud: bool,
 ) {
     if cancel_flag.load(Ordering::Relaxed) {
         return;
@@ -176,12 +247,11 @@ fn scan_directory_recursive(
         }
 
         let folder_name = entry.file_name().to_string_lossy().to_string();
+        let target_path = entry.path();
 
-        if should_skip_dir(&folder_name) {
+        if should_skip_dir(&folder_name, &target_path, include_cloud) {
             continue;
         }
-
-        let target_path = entry.path();
 
         // Check if this folder is an artifact of the current directory
         if let Some(rule) = match_rule(&folder_name, current_dir) {
@@ -199,11 +269,18 @@ fn scan_directory_recursive(
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_else(|| current_dir.to_string_lossy().to_string());
 
+            // Compute relative display path for context (e.g. "look-busy/look-busy" or "flut/impromptu")
+            let display_path = match current_dir.strip_prefix(root_dir) {
+                Ok(rel) if !rel.as_os_str().is_empty() => rel.to_string_lossy().replace('\\', "/"),
+                _ => project_name.clone(),
+            };
+
             let artifact = DiscoveredArtifact {
                 id,
                 target_path: target_path.clone(),
                 project_path: current_dir.to_path_buf(),
                 project_name,
+                display_path,
                 folder_name: folder_name.clone(),
                 ecosystem: rule.ecosystem,
                 rule_label: rule.label.to_string(),
@@ -258,12 +335,14 @@ fn scan_directory_recursive(
     for subdir in subdirs_to_recurse {
         scan_directory_recursive(
             &subdir,
+            root_dir,
             tx,
             cancel_flag,
             id_counter,
             total_dirs,
             pending_tasks,
             allowed_ecosystems,
+            include_cloud,
         );
     }
 }

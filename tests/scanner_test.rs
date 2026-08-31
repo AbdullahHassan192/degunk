@@ -25,7 +25,7 @@ fn test_scanner_detects_node_modules() {
     let (tx, rx) = crossbeam_channel::unbounded();
     let cancel = Arc::new(AtomicBool::new(false));
 
-    Scanner::start_scan(vec![temp_dir.clone()], tx, cancel, None);
+    Scanner::start_scan(vec![temp_dir.clone()], tx, cancel, None, false);
 
     let mut found_artifacts = Vec::new();
     while let Ok(msg) = rx.recv() {
@@ -63,7 +63,7 @@ fn test_scanner_detects_rust_target() {
     let (tx, rx) = crossbeam_channel::unbounded();
     let cancel = Arc::new(AtomicBool::new(false));
 
-    Scanner::start_scan(vec![temp_dir.clone()], tx, cancel, None);
+    Scanner::start_scan(vec![temp_dir.clone()], tx, cancel, None, false);
 
     let mut found_artifacts = Vec::new();
     while let Ok(msg) = rx.recv() {
@@ -81,3 +81,44 @@ fn test_scanner_detects_rust_target() {
     // Clean up
     let _ = fs::remove_dir_all(&temp_dir);
 }
+
+#[test]
+fn test_scanner_skips_onedrive_folders() {
+    let temp_dir = std::env::temp_dir().join("bh_test_onedrive_skip");
+    let _ = fs::remove_dir_all(&temp_dir);
+    fs::create_dir_all(&temp_dir).unwrap();
+
+    // Create a fake OneDrive folder with node_modules inside
+    let onedrive_folder = temp_dir.join("OneDrive - Personal").join("my_cloud_proj");
+    fs::create_dir_all(onedrive_folder.join("node_modules")).unwrap();
+    let mut f = File::create(onedrive_folder.join("package.json")).unwrap();
+    writeln!(f, r#"{{"name":"cloud_proj"}}"#).unwrap();
+
+    // Create a normal local project outside OneDrive
+    let local_folder = temp_dir.join("local_proj");
+    fs::create_dir_all(local_folder.join("node_modules")).unwrap();
+    let mut f2 = File::create(local_folder.join("package.json")).unwrap();
+    writeln!(f2, r#"{{"name":"local_proj"}}"#).unwrap();
+
+    let (tx, rx) = crossbeam_channel::unbounded();
+    let cancel = Arc::new(AtomicBool::new(false));
+
+    // Scan with include_cloud = false (default)
+    Scanner::start_scan(vec![temp_dir.clone()], tx, cancel, None, false);
+
+    let mut found = Vec::new();
+    while let Ok(msg) = rx.recv() {
+        match msg {
+            ScanMessage::Found(art) => found.push(art),
+            ScanMessage::Finished { .. } => break,
+            _ => {}
+        }
+    }
+
+    // Should only find the local_proj, completely skipping OneDrive!
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].project_name, "local_proj");
+
+    let _ = fs::remove_dir_all(&temp_dir);
+}
+

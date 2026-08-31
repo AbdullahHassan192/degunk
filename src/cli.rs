@@ -39,6 +39,14 @@ pub struct Cli {
     #[arg(long = "older-than", value_name = "DAYS")]
     pub older_than: Option<u32>,
 
+    /// Minimum artifact size to display/target (e.g. "10KB", "5MB", "1GB")
+    #[arg(long = "min-size", value_name = "SIZE")]
+    pub min_size: Option<String>,
+
+    /// Include cloud storage folders (OneDrive, Google Drive, Dropbox, iCloud)
+    #[arg(long = "include-cloud")]
+    pub include_cloud: bool,
+
     /// Clean all matching targets without interactive prompt
     #[arg(long = "clean-all")]
     pub clean_all: bool,
@@ -66,6 +74,14 @@ impl Cli {
         })
     }
 
+    pub fn parse_min_size_bytes(&self) -> u64 {
+        if let Some(ref s) = self.min_size {
+            parse_size_str(s).unwrap_or(0)
+        } else {
+            0
+        }
+    }
+
     pub fn target_paths(&self) -> Vec<PathBuf> {
         if self.paths.is_empty() {
             vec![std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))]
@@ -79,10 +95,33 @@ impl Cli {
     }
 }
 
+pub fn parse_size_str(s: &str) -> Option<u64> {
+    let trimmed = s.trim().to_uppercase();
+    if trimmed.ends_with("GB") || trimmed.ends_with("G") {
+        let num_str = trimmed.trim_end_matches("GB").trim_end_matches('G');
+        let num: f64 = num_str.parse().ok()?;
+        Some((num * 1024.0 * 1024.0 * 1024.0) as u64)
+    } else if trimmed.ends_with("MB") || trimmed.ends_with("M") {
+        let num_str = trimmed.trim_end_matches("MB").trim_end_matches('M');
+        let num: f64 = num_str.parse().ok()?;
+        Some((num * 1024.0 * 1024.0) as u64)
+    } else if trimmed.ends_with("KB") || trimmed.ends_with("K") {
+        let num_str = trimmed.trim_end_matches("KB").trim_end_matches('K');
+        let num: f64 = num_str.parse().ok()?;
+        Some((num * 1024.0) as u64)
+    } else if trimmed.ends_with('B') {
+        let num_str = trimmed.trim_end_matches('B');
+        num_str.parse().ok()
+    } else {
+        trimmed.parse().ok()
+    }
+}
+
 /// Runs the non-interactive CLI mode.
 pub fn run_cli(cli: &Cli) {
     let target_paths = cli.target_paths();
     let allowed_ecosystems = cli.parse_ecosystems();
+    let min_bytes = cli.parse_min_size_bytes();
 
     if !cli.json {
         println!("Scanning for dependency & build artifacts in:");
@@ -96,7 +135,7 @@ pub fn run_cli(cli: &Cli) {
     let scanner = Scanner::new();
     let cancel = scanner.cancel_handle();
 
-    Scanner::start_scan(target_paths, tx, cancel, allowed_ecosystems);
+    Scanner::start_scan(target_paths, tx, cancel, allowed_ecosystems, cli.include_cloud);
 
     let mut artifacts: Vec<DiscoveredArtifact> = Vec::new();
     let mut total_bytes = 0u64;
@@ -137,6 +176,11 @@ pub fn run_cli(cli: &Cli) {
         artifacts.retain(|a| a.days_inactive >= min_days);
     }
 
+    // Filter by min_size if specified
+    if min_bytes > 0 {
+        artifacts.retain(|a| a.size_bytes >= min_bytes);
+    }
+
     for a in &artifacts {
         total_bytes += a.size_bytes;
     }
@@ -153,10 +197,10 @@ pub fn run_cli(cli: &Cli) {
     }
 
     println!(
-        "{:<30} {:<12} {:<18} {:<12} {:<15} {}",
-        "PROJECT", "TYPE", "TARGET FOLDER", "SIZE", "INACTIVITY", "LOCKFILE"
+        "{:<32} {:<12} {:<18} {:<12} {:<15} {}",
+        "PROJECT / PATH", "TYPE", "TARGET FOLDER", "SIZE", "INACTIVITY", "LOCKFILE"
     );
-    println!("{:-<100}", "");
+    println!("{:-<105}", "");
 
     for a in &artifacts {
         let lock_str = if a.has_lockfile {
@@ -172,8 +216,8 @@ pub fn run_cli(cli: &Cli) {
         };
 
         println!(
-            "{:<30} {:<12} {:<18} {:<12} {:<15} {}",
-            truncate_str(&a.project_name, 28),
+            "{:<32} {:<12} {:<18} {:<12} {:<15} {}",
+            truncate_str(&a.display_path, 30),
             a.ecosystem.badge(),
             truncate_str(&a.folder_name, 16),
             format_bytes(a.size_bytes),
@@ -182,7 +226,7 @@ pub fn run_cli(cli: &Cli) {
         );
     }
 
-    println!("{:-<100}", "");
+    println!("{:-<105}", "");
     println!(
         "Found {} artifacts totaling {}\n",
         artifacts.len(),

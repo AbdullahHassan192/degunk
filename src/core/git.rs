@@ -37,7 +37,7 @@ pub fn find_git_root(start_path: &Path) -> Option<PathBuf> {
 /// Inspects the git and filesystem activity of a project directory.
 pub fn inspect_project_activity(project_dir: &Path) -> ProjectActivity {
     if let Some(git_root) = find_git_root(project_dir) {
-        if let Some(activity) = inspect_git_repo(&git_root) {
+        if let Some(activity) = inspect_git_repo(&git_root, project_dir) {
             return activity;
         }
     }
@@ -57,16 +57,31 @@ pub fn inspect_project_activity(project_dir: &Path) -> ProjectActivity {
     }
 }
 
-fn inspect_git_repo(git_root: &Path) -> Option<ProjectActivity> {
-    // 1. Get last commit timestamp and message: git log -1 --format=%ct%x00%s
-    let log_output = Command::new("git")
-        .args(["log", "-1", "--format=%ct\0%s"])
-        .current_dir(git_root)
-        .output()
-        .ok();
+fn inspect_git_repo(git_root: &Path, project_dir: &Path) -> Option<ProjectActivity> {
+    let rel_path = project_dir.strip_prefix(git_root).unwrap_or(Path::new(""));
+    let rel_str = rel_path.to_string_lossy();
+
+    // 1. Get last commit timestamp and message for this specific subproject
+    let mut log_cmd = Command::new("git");
+    log_cmd.args(["log", "-1", "--format=%ct\0%s"]);
+    if !rel_str.is_empty() {
+        log_cmd.args(["--", rel_str.as_ref()]);
+    }
+    let mut log_output = log_cmd.current_dir(git_root).output().ok();
+
+    // If subpath log failed or empty, fallback to repository-level git log
+    if let Some(ref out) = log_output {
+        if !out.status.success() || out.stdout.is_empty() {
+            log_output = Command::new("git")
+                .args(["log", "-1", "--format=%ct\0%s"])
+                .current_dir(git_root)
+                .output()
+                .ok();
+        }
+    }
 
     let (last_active, commit_msg) = if let Some(ref out) = log_output {
-        if out.status.success() {
+        if out.status.success() && !out.stdout.is_empty() {
             let stdout = String::from_utf8_lossy(&out.stdout);
             let mut parts = stdout.trim().splitn(2, '\0');
             let timestamp_str = parts.next().unwrap_or("");
@@ -76,28 +91,29 @@ fn inspect_git_repo(git_root: &Path) -> Option<ProjectActivity> {
                 if let Some(dt_utc) = Utc.timestamp_opt(ts, 0).single() {
                     (DateTime::<Local>::from(dt_utc), msg)
                 } else {
-                    (get_last_modified_time(git_root), None)
+                    (get_last_modified_time(project_dir), None)
                 }
             } else {
-                (get_last_modified_time(git_root), None)
+                (get_last_modified_time(project_dir), None)
             }
         } else {
-            (get_last_modified_time(git_root), None)
+            (get_last_modified_time(project_dir), None)
         }
     } else {
-        (get_last_modified_time(git_root), None)
+        (get_last_modified_time(project_dir), None)
     };
 
     let now = Local::now();
     let duration = now.signed_duration_since(last_active);
     let days_inactive = duration.num_days().max(0) as u32;
 
-    // 2. Check git status: git status --porcelain
-    let status_output = Command::new("git")
-        .args(["status", "--porcelain"])
-        .current_dir(git_root)
-        .output()
-        .ok();
+    // 2. Check git status scoped to the project directory
+    let mut status_cmd = Command::new("git");
+    status_cmd.args(["status", "--porcelain"]);
+    if !rel_str.is_empty() {
+        status_cmd.args(["--", rel_str.as_ref()]);
+    }
+    let status_output = status_cmd.current_dir(git_root).output().ok();
 
     let changed_count = match status_output {
         Some(ref out) if out.status.success() => {

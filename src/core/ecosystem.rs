@@ -84,7 +84,7 @@ pub static RULES: &[ArtifactRule] = &[
         ecosystem: Ecosystem::Node,
         folder_names: &["node_modules"],
         required_manifests: &["package.json"],
-        lockfiles: &["package-lock.json", "pnpm-lock.yaml", "yarn.lock", "bun.lockb"],
+        lockfiles: &["package-lock.json", "pnpm-lock.yaml", "yarn.lock", "bun.lockb", "bun.lock"],
         reinstall_cmd: "npm install",
     },
     ArtifactRule {
@@ -92,7 +92,7 @@ pub static RULES: &[ArtifactRule] = &[
         ecosystem: Ecosystem::Node,
         folder_names: &[".next"],
         required_manifests: &["package.json", "next.config.js", "next.config.mjs", "next.config.ts"],
-        lockfiles: &["package-lock.json", "pnpm-lock.yaml", "yarn.lock", "bun.lockb"],
+        lockfiles: &["package-lock.json", "pnpm-lock.yaml", "yarn.lock", "bun.lockb", "bun.lock"],
         reinstall_cmd: "npm run build",
     },
     ArtifactRule {
@@ -100,7 +100,7 @@ pub static RULES: &[ArtifactRule] = &[
         ecosystem: Ecosystem::Node,
         folder_names: &[".nuxt"],
         required_manifests: &["package.json", "nuxt.config.js", "nuxt.config.ts"],
-        lockfiles: &["package-lock.json", "pnpm-lock.yaml", "yarn.lock", "bun.lockb"],
+        lockfiles: &["package-lock.json", "pnpm-lock.yaml", "yarn.lock", "bun.lockb", "bun.lock"],
         reinstall_cmd: "npx nuxi build",
     },
     ArtifactRule {
@@ -108,7 +108,7 @@ pub static RULES: &[ArtifactRule] = &[
         ecosystem: Ecosystem::Node,
         folder_names: &[".turbo"],
         required_manifests: &["package.json", "turbo.json"],
-        lockfiles: &["package-lock.json", "pnpm-lock.yaml", "yarn.lock", "bun.lockb"],
+        lockfiles: &["package-lock.json", "pnpm-lock.yaml", "yarn.lock", "bun.lockb", "bun.lock"],
         reinstall_cmd: "turbo build",
     },
     ArtifactRule {
@@ -116,7 +116,7 @@ pub static RULES: &[ArtifactRule] = &[
         ecosystem: Ecosystem::Node,
         folder_names: &[".svelte-kit"],
         required_manifests: &["package.json", "svelte.config.js"],
-        lockfiles: &["package-lock.json", "pnpm-lock.yaml", "yarn.lock", "bun.lockb"],
+        lockfiles: &["package-lock.json", "pnpm-lock.yaml", "yarn.lock", "bun.lockb", "bun.lock"],
         reinstall_cmd: "npm run build",
     },
     // Python
@@ -125,7 +125,7 @@ pub static RULES: &[ArtifactRule] = &[
         ecosystem: Ecosystem::Python,
         folder_names: &[".venv", "venv", "env"],
         required_manifests: &["pyproject.toml", "requirements.txt", "Pipfile", "setup.py", "setup.cfg"],
-        lockfiles: &["poetry.lock", "Pipfile.lock", "pdm.lock", "uv.lock"],
+        lockfiles: &["poetry.lock", "Pipfile.lock", "pdm.lock", "uv.lock", "requirements.lock", "requirements.txt"],
         reinstall_cmd: "python -m venv .venv && pip install -r requirements.txt",
     },
     ArtifactRule {
@@ -151,7 +151,7 @@ pub static RULES: &[ArtifactRule] = &[
         ecosystem: Ecosystem::Java,
         folder_names: &["build", ".gradle"],
         required_manifests: &["build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts", "gradlew"],
-        lockfiles: &["gradle.lockfile"],
+        lockfiles: &["gradle.lockfile", "build.gradle", "build.gradle.kts"],
         reinstall_cmd: "./gradlew build",
     },
     ArtifactRule {
@@ -159,7 +159,7 @@ pub static RULES: &[ArtifactRule] = &[
         ecosystem: Ecosystem::Java,
         folder_names: &["target"],
         required_manifests: &["pom.xml"],
-        lockfiles: &[],
+        lockfiles: &["pom.xml"],
         reinstall_cmd: "mvn clean install",
     },
     // Go

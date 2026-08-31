@@ -44,15 +44,15 @@ pub fn render_table(f: &mut Frame, app: &mut App, area: Rect) {
                 Span::styled(" [ ] ", Style::default().fg(Color::DarkGray))
             };
 
-            // Project name
+            // Project / Path
             let project_span = if item.is_deleted {
                 Span::styled(
-                    &item.project_name,
+                    &item.display_path,
                     Style::default().fg(Color::DarkGray).add_modifier(Modifier::CROSSED_OUT),
                 )
             } else {
                 Span::styled(
-                    &item.project_name,
+                    &item.display_path,
                     Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
                 )
             };
