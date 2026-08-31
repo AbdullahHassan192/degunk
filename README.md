@@ -103,7 +103,11 @@ blackhole/
 | :--- | :--- |
 | `↑` / `k` | Move selection up |
 | `↓` / `j` | Move selection down |
-| `Space` | Toggle selection checkmark on highlighted item |
+| `Space` | Toggle selection checkmark (toggling on a project group selects/deselects all its artifacts) |
+| `Enter` / `Tab` / `e` | Expand / Collapse highlighted project group |
+| `→` / `l` | Expand highlighted project group |
+| `←` / `h` | Collapse highlighted project group (or jump from child to parent group) |
+| `E` | Toggle Expand All / Collapse All |
 | `a` | Toggle select all / deselect all |
 | `s` | Cycle sort mode (`Size ↓`, `Inactivity Age ↓`, `Name A-Z`, `Ecosystem A-Z`) |
 | `/` | Open search and filter input bar |

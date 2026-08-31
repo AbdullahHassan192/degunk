@@ -63,7 +63,7 @@ fn inspect_git_repo(git_root: &Path, project_dir: &Path) -> Option<ProjectActivi
 
     // 1. Get last commit timestamp and message for this specific subproject
     let mut log_cmd = Command::new("git");
-    log_cmd.args(["log", "-1", "--format=%ct\0%s"]);
+    log_cmd.args(["log", "-1", "--format=%ct%x00%s"]);
     if !rel_str.is_empty() {
         log_cmd.args(["--", rel_str.as_ref()]);
     }
@@ -73,7 +73,7 @@ fn inspect_git_repo(git_root: &Path, project_dir: &Path) -> Option<ProjectActivi
     if let Some(ref out) = log_output {
         if !out.status.success() || out.stdout.is_empty() {
             log_output = Command::new("git")
-                .args(["log", "-1", "--format=%ct\0%s"])
+                .args(["log", "-1", "--format=%ct%x00%s"])
                 .current_dir(git_root)
                 .output()
                 .ok();

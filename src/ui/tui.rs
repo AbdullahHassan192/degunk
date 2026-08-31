@@ -160,6 +160,18 @@ fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
                     KeyCode::Char(' ') => {
                         app.toggle_selection();
                     }
+                    KeyCode::Enter | KeyCode::Tab | KeyCode::Char('e') => {
+                        app.toggle_expand();
+                    }
+                    KeyCode::Right | KeyCode::Char('l') => {
+                        app.expand_group();
+                    }
+                    KeyCode::Left | KeyCode::Char('h') => {
+                        app.collapse_group();
+                    }
+                    KeyCode::Char('E') => {
+                        app.toggle_expand_all();
+                    }
                     KeyCode::Char('a') => {
                         app.toggle_all();
                     }

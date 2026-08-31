@@ -17,6 +17,9 @@ pub struct DiscoveredArtifact {
     pub project_path: PathBuf,
     pub project_name: String,
     pub display_path: String,
+    pub root_project_path: PathBuf,
+    pub root_project_name: String,
+    pub sub_path: String,
     pub folder_name: String,
     pub ecosystem: Ecosystem,
     pub rule_label: String,
@@ -275,12 +278,17 @@ fn scan_directory_recursive(
                 _ => project_name.clone(),
             };
 
+            let (root_project_path, root_project_name, sub_path) = resolve_root_project(current_dir, root_dir);
+
             let artifact = DiscoveredArtifact {
                 id,
                 target_path: target_path.clone(),
                 project_path: current_dir.to_path_buf(),
                 project_name,
                 display_path,
+                root_project_path,
+                root_project_name,
+                sub_path,
                 folder_name: folder_name.clone(),
                 ecosystem: rule.ecosystem,
                 rule_label: rule.label.to_string(),
@@ -346,3 +354,66 @@ fn scan_directory_recursive(
         );
     }
 }
+
+/// Determines the logical top-level project root and relative subproject path for an artifact.
+pub fn resolve_root_project(current_dir: &Path, root_dir: &Path) -> (PathBuf, String, String) {
+    // 1. Check if inside a git repository root that is under or equal to root_dir
+    if let Some(git_root) = crate::core::git::find_git_root(current_dir) {
+        if git_root.starts_with(root_dir) && git_root != root_dir {
+            let root_display = match git_root.strip_prefix(root_dir) {
+                Ok(rel) if !rel.as_os_str().is_empty() => rel.to_string_lossy().replace('\\', "/"),
+                _ => git_root
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| git_root.to_string_lossy().to_string()),
+            };
+            let sub_path = match current_dir.strip_prefix(&git_root) {
+                Ok(rel) if !rel.as_os_str().is_empty() => rel.to_string_lossy().replace('\\', "/"),
+                _ => String::new(),
+            };
+            return (git_root, root_display, sub_path);
+        }
+    }
+
+    // 2. Walk upwards from current_dir towards root_dir to find ancestor with root project manifest
+    let mut curr = current_dir.to_path_buf();
+    let mut best_root = current_dir.to_path_buf();
+    while curr != root_dir {
+        if let Some(parent) = curr.parent() {
+            if parent == root_dir {
+                if best_root == current_dir {
+                    best_root = curr.clone();
+                }
+                break;
+            }
+            let has_manifest = parent.join("Cargo.toml").exists()
+                || parent.join("package.json").exists()
+                || parent.join("pubspec.yaml").exists()
+                || parent.join("pyproject.toml").exists()
+                || parent.join("go.mod").exists()
+                || parent.join(".git").exists();
+            if has_manifest {
+                best_root = parent.to_path_buf();
+            }
+            curr = parent.to_path_buf();
+        } else {
+            break;
+        }
+    }
+
+    let root_display = match best_root.strip_prefix(root_dir) {
+        Ok(rel) if !rel.as_os_str().is_empty() => rel.to_string_lossy().replace('\\', "/"),
+        _ => best_root
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| best_root.to_string_lossy().to_string()),
+    };
+
+    let sub_path = match current_dir.strip_prefix(&best_root) {
+        Ok(rel) if !rel.as_os_str().is_empty() => rel.to_string_lossy().replace('\\', "/"),
+        _ => String::new(),
+    };
+
+    (best_root, root_display, sub_path)
+}
+
