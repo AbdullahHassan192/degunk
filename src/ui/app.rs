@@ -3,10 +3,20 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::thread;
 
-use crate::core::deleter::{delete_path, DeleteMode};
+use crate::core::deleter::{delete_path, DeleteMode, DeleteProgressMessage};
 use crate::core::ecosystem::Ecosystem;
+use crate::core::global_cache::{
+    detect_global_caches, start_global_cache_scan, GlobalCacheMessage, GlobalCacheTarget,
+};
 use crate::core::scanner::{DiscoveredArtifact, ScanMessage, Scanner};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ActiveTab {
+    Projects,
+    GlobalCaches,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SortMode {
@@ -31,8 +41,16 @@ impl SortMode {
 pub enum DeletionState {
     Idle,
     Confirming,
-    Deleting,
-    Done { freed_bytes: u64, errors: usize },
+    Deleting {
+        completed: usize,
+        total: usize,
+        current_path: String,
+        freed_bytes: u64,
+    },
+    Done {
+        freed_bytes: u64,
+        errors: usize,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -92,8 +110,15 @@ pub struct App {
     pub should_quit: bool,
     pub collapsed_groups: HashSet<String>,
 
+    pub active_tab: ActiveTab,
+    pub global_caches: Vec<GlobalCacheTarget>,
+    pub selected_cache_index: usize,
+
     scanner_cancel: Option<Arc<AtomicBool>>,
     rx: Option<Receiver<ScanMessage>>,
+    global_cache_cancel: Option<Arc<AtomicBool>>,
+    global_cache_rx: Option<Receiver<GlobalCacheMessage>>,
+    deletion_rx: Option<Receiver<DeleteProgressMessage>>,
 }
 
 impl App {
@@ -117,8 +142,14 @@ impl App {
             deletion_state: DeletionState::Idle,
             should_quit: false,
             collapsed_groups: HashSet::new(),
+            active_tab: ActiveTab::Projects,
+            global_caches: Vec::new(),
+            selected_cache_index: 0,
             scanner_cancel: None,
             rx: None,
+            global_cache_cancel: None,
+            global_cache_rx: None,
+            deletion_rx: None,
         };
         app.start_scan();
         app
@@ -126,6 +157,9 @@ impl App {
 
     pub fn start_scan(&mut self) {
         if let Some(ref cancel) = self.scanner_cancel {
+            cancel.store(true, Ordering::Relaxed);
+        }
+        if let Some(ref cancel) = self.global_cache_cancel {
             cancel.store(true, Ordering::Relaxed);
         }
 
@@ -140,6 +174,14 @@ impl App {
 
         self.scanner_cancel = Some(cancel.clone());
         self.rx = Some(rx);
+
+        // Scan global tool caches in background
+        self.global_caches = detect_global_caches();
+        let (gc_tx, gc_rx) = crossbeam_channel::unbounded();
+        let gc_cancel = Arc::new(AtomicBool::new(false));
+        self.global_cache_cancel = Some(gc_cancel.clone());
+        self.global_cache_rx = Some(gc_rx);
+        start_global_cache_scan(self.global_caches.clone(), gc_tx, gc_cancel);
 
         Scanner::start_scan(
             self.roots.clone(),
@@ -188,6 +230,64 @@ impl App {
                     }
                 }
             }
+        }
+
+        // Process incoming global cache sizing messages
+        if let Some(ref rx) = self.global_cache_rx {
+            while let Ok(msg) = rx.try_recv() {
+                match msg {
+                    GlobalCacheMessage::Discovered(targets) => {
+                        self.global_caches = targets;
+                    }
+                    GlobalCacheMessage::SizeUpdated {
+                        id,
+                        size_bytes,
+                        file_count,
+                    } => {
+                        if let Some(cache) = self.global_caches.iter_mut().find(|c| c.id == id) {
+                            cache.size_bytes = size_bytes;
+                            cache.file_count = file_count;
+                            cache.size_calculated = true;
+                        }
+                    }
+                    GlobalCacheMessage::Finished => {}
+                }
+            }
+        }
+
+        // Process non-blocking deletion progress
+        let mut deletion_finished = false;
+        if let Some(ref rx) = self.deletion_rx {
+            while let Ok(msg) = rx.try_recv() {
+                match msg {
+                    DeleteProgressMessage::Progress {
+                        current_index,
+                        total_count,
+                        current_path,
+                        freed_bytes,
+                    } => {
+                        self.deletion_state = DeletionState::Deleting {
+                            completed: current_index,
+                            total: total_count,
+                            current_path,
+                            freed_bytes,
+                        };
+                    }
+                    DeleteProgressMessage::Done {
+                        freed_bytes,
+                        errors,
+                    } => {
+                        self.deletion_state = DeletionState::Done {
+                            freed_bytes,
+                            errors,
+                        };
+                        deletion_finished = true;
+                    }
+                }
+            }
+        }
+        if deletion_finished {
+            self.deletion_rx = None;
         }
     }
 
@@ -392,7 +492,55 @@ impl App {
         items
     }
 
+    pub fn get_visible_global_caches(&self) -> Vec<(usize, &GlobalCacheTarget)> {
+        let q = self.search_query.to_lowercase();
+        let mut items: Vec<(usize, &GlobalCacheTarget)> = self
+            .global_caches
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| {
+                if q.is_empty() {
+                    true
+                } else {
+                    c.name.to_lowercase().contains(&q)
+                        || c.ecosystem.name().to_lowercase().contains(&q)
+                        || c.ecosystem.badge().to_lowercase().contains(&q)
+                        || c.path.to_string_lossy().to_lowercase().contains(&q)
+                        || c.description.to_lowercase().contains(&q)
+                        || c.clean_hint.to_lowercase().contains(&q)
+                }
+            })
+            .collect();
+
+        match self.sort_mode {
+            SortMode::SizeDesc => items.sort_by(|(_, a), (_, b)| b.size_bytes.cmp(&a.size_bytes)),
+            SortMode::AgeDesc => items.sort_by(|(_, a), (_, b)| b.file_count.cmp(&a.file_count)),
+            SortMode::NameAsc => items.sort_by(|(_, a), (_, b)| {
+                a.name.to_lowercase().cmp(&b.name.to_lowercase())
+            }),
+            SortMode::EcosystemAsc => {
+                items.sort_by(|(_, a), (_, b)| a.ecosystem.name().cmp(b.ecosystem.name()))
+            }
+        }
+
+        items
+    }
+
+    pub fn switch_tab(&mut self) {
+        self.active_tab = match self.active_tab {
+            ActiveTab::Projects => ActiveTab::GlobalCaches,
+            ActiveTab::GlobalCaches => ActiveTab::Projects,
+        };
+    }
+
     pub fn get_total_bytes(&self) -> u64 {
+        match self.active_tab {
+            ActiveTab::Projects => self.get_total_project_bytes(),
+            ActiveTab::GlobalCaches => self.get_total_global_cache_bytes(),
+        }
+    }
+
+    pub fn get_total_project_bytes(&self) -> u64 {
         self.artifacts
             .iter()
             .filter(|a| !a.is_deleted)
@@ -400,66 +548,132 @@ impl App {
             .sum()
     }
 
-    pub fn get_selected_stats(&self) -> (usize, u64) {
-        let selected: Vec<_> = self
-            .artifacts
+    pub fn get_total_global_cache_bytes(&self) -> u64 {
+        self.global_caches
             .iter()
-            .filter(|a| a.is_selected && !a.is_deleted)
-            .collect();
+            .filter(|c| !c.is_deleted)
+            .map(|c| c.size_bytes)
+            .sum()
+    }
 
-        let count = selected.len();
-        let bytes = selected.iter().map(|a| a.size_bytes).sum();
-        (count, bytes)
+    pub fn get_selected_stats(&self) -> (usize, u64) {
+        match self.active_tab {
+            ActiveTab::Projects => {
+                let selected: Vec<_> = self
+                    .artifacts
+                    .iter()
+                    .filter(|a| a.is_selected && !a.is_deleted)
+                    .collect();
+                let count = selected.len();
+                let bytes = selected.iter().map(|a| a.size_bytes).sum();
+                (count, bytes)
+            }
+            ActiveTab::GlobalCaches => {
+                let selected: Vec<_> = self
+                    .global_caches
+                    .iter()
+                    .filter(|c| c.is_selected && !c.is_deleted)
+                    .collect();
+                let count = selected.len();
+                let bytes = selected.iter().map(|c| c.size_bytes).sum();
+                (count, bytes)
+            }
+        }
     }
 
     pub fn move_up(&mut self) {
-        let count = self.get_visible_table_items().len();
-        if count == 0 {
-            self.selected_table_index = 0;
-        } else if self.selected_table_index > 0 {
-            self.selected_table_index -= 1;
-        } else {
-            self.selected_table_index = count.saturating_sub(1);
+        match self.active_tab {
+            ActiveTab::Projects => {
+                let count = self.get_visible_table_items().len();
+                if count == 0 {
+                    self.selected_table_index = 0;
+                } else if self.selected_table_index > 0 {
+                    self.selected_table_index -= 1;
+                } else {
+                    self.selected_table_index = count.saturating_sub(1);
+                }
+            }
+            ActiveTab::GlobalCaches => {
+                let count = self.get_visible_global_caches().len();
+                if count == 0 {
+                    self.selected_cache_index = 0;
+                } else if self.selected_cache_index > 0 {
+                    self.selected_cache_index -= 1;
+                } else {
+                    self.selected_cache_index = count.saturating_sub(1);
+                }
+            }
         }
     }
 
     pub fn move_down(&mut self) {
-        let count = self.get_visible_table_items().len();
-        if count == 0 {
-            self.selected_table_index = 0;
-        } else if self.selected_table_index + 1 < count {
-            self.selected_table_index += 1;
-        } else {
-            self.selected_table_index = 0;
+        match self.active_tab {
+            ActiveTab::Projects => {
+                let count = self.get_visible_table_items().len();
+                if count == 0 {
+                    self.selected_table_index = 0;
+                } else if self.selected_table_index + 1 < count {
+                    self.selected_table_index += 1;
+                } else {
+                    self.selected_table_index = 0;
+                }
+            }
+            ActiveTab::GlobalCaches => {
+                let count = self.get_visible_global_caches().len();
+                if count == 0 {
+                    self.selected_cache_index = 0;
+                } else if self.selected_cache_index + 1 < count {
+                    self.selected_cache_index += 1;
+                } else {
+                    self.selected_cache_index = 0;
+                }
+            }
         }
     }
 
     pub fn toggle_selection(&mut self) {
-        let visible = self.get_visible_table_items();
-        if let Some(target) = visible.get(self.selected_table_index) {
-            match target {
-                TableItem::GroupHeader {
-                    group_key,
-                    selection_state,
-                    ..
-                } => {
-                    let should_select = *selection_state != GroupSelectionState::All;
-                    for art in &mut self.artifacts {
-                        let art_key = if art.root_project_name.is_empty() {
-                            &art.display_path
-                        } else {
-                            &art.root_project_name
-                        };
-                        if art_key == group_key && !art.is_deleted {
-                            art.is_selected = should_select;
+        match self.active_tab {
+            ActiveTab::Projects => {
+                let visible = self.get_visible_table_items();
+                if let Some(target) = visible.get(self.selected_table_index) {
+                    match target {
+                        TableItem::GroupHeader {
+                            group_key,
+                            selection_state,
+                            ..
+                        } => {
+                            let should_select = *selection_state != GroupSelectionState::All;
+                            for art in &mut self.artifacts {
+                                let art_key = if art.root_project_name.is_empty() {
+                                    &art.display_path
+                                } else {
+                                    &art.root_project_name
+                                };
+                                if art_key == group_key && !art.is_deleted {
+                                    art.is_selected = should_select;
+                                }
+                            }
+                        }
+                        TableItem::ChildArtifact { artifact_id, .. } => {
+                            let id = *artifact_id;
+                            if let Some(art) = self.artifacts.iter_mut().find(|a| a.id == id) {
+                                if !art.is_deleted {
+                                    art.is_selected = !art.is_selected;
+                                }
+                            }
                         }
                     }
                 }
-                TableItem::ChildArtifact { artifact_id, .. } => {
-                    let id = *artifact_id;
-                    if let Some(art) = self.artifacts.iter_mut().find(|a| a.id == id) {
-                        if !art.is_deleted {
-                            art.is_selected = !art.is_selected;
+            }
+            ActiveTab::GlobalCaches => {
+                let target_idx = self
+                    .get_visible_global_caches()
+                    .get(self.selected_cache_index)
+                    .map(|(orig_idx, _)| *orig_idx);
+                if let Some(original_idx) = target_idx {
+                    if let Some(target) = self.global_caches.get_mut(original_idx) {
+                        if !target.is_deleted {
+                            target.is_selected = !target.is_selected;
                         }
                     }
                 }
@@ -468,6 +682,9 @@ impl App {
     }
 
     pub fn toggle_expand(&mut self) {
+        if self.active_tab != ActiveTab::Projects {
+            return;
+        }
         let visible = self.get_visible_table_items();
         if let Some(target) = visible.get(self.selected_table_index) {
             match target {
@@ -495,6 +712,9 @@ impl App {
     }
 
     pub fn expand_group(&mut self) {
+        if self.active_tab != ActiveTab::Projects {
+            return;
+        }
         let visible = self.get_visible_table_items();
         if let Some(target) = visible.get(self.selected_table_index) {
             match target {
@@ -507,6 +727,9 @@ impl App {
     }
 
     pub fn collapse_group(&mut self) {
+        if self.active_tab != ActiveTab::Projects {
+            return;
+        }
         let visible = self.get_visible_table_items();
         if let Some(target) = visible.get(self.selected_table_index) {
             match target {
@@ -526,6 +749,9 @@ impl App {
     }
 
     pub fn toggle_expand_all(&mut self) {
+        if self.active_tab != ActiveTab::Projects {
+            return;
+        }
         let visible = self.get_visible_table_items();
         let any_expanded = visible.iter().any(|it| {
             matches!(
@@ -549,10 +775,29 @@ impl App {
     }
 
     pub fn toggle_all(&mut self) {
-        let any_selected = self.artifacts.iter().any(|a| a.is_selected && !a.is_deleted);
-        for art in &mut self.artifacts {
-            if !art.is_deleted {
-                art.is_selected = !any_selected;
+        match self.active_tab {
+            ActiveTab::Projects => {
+                let any_selected = self.artifacts.iter().any(|a| a.is_selected && !a.is_deleted);
+                for art in &mut self.artifacts {
+                    if !art.is_deleted {
+                        art.is_selected = !any_selected;
+                    }
+                }
+            }
+            ActiveTab::GlobalCaches => {
+                let (indices, any_selected) = {
+                    let visible = self.get_visible_global_caches();
+                    let any_selected = visible.iter().any(|(_, c)| c.is_selected && !c.is_deleted);
+                    let indices: Vec<usize> = visible.into_iter().map(|(idx, _)| idx).collect();
+                    (indices, any_selected)
+                };
+                for original_idx in indices {
+                    if let Some(cache) = self.global_caches.get_mut(original_idx) {
+                        if !cache.is_deleted {
+                            cache.is_selected = !any_selected;
+                        }
+                    }
+                }
             }
         }
     }
@@ -562,29 +807,74 @@ impl App {
     }
 
     pub fn perform_deletion(&mut self, mode: DeleteMode) {
-        self.deletion_state = DeletionState::Deleting;
+        let (tx, rx) = crossbeam_channel::unbounded();
+        self.deletion_rx = Some(rx);
 
-        let mut freed_bytes = 0u64;
-        let mut errors = 0usize;
-
-        for art in &mut self.artifacts {
-            if art.is_selected && !art.is_deleted {
-                match delete_path(&art.target_path, mode) {
-                    Ok(()) => {
+        let targets: Vec<(PathBuf, u64)> = match self.active_tab {
+            ActiveTab::Projects => {
+                let mut list = Vec::new();
+                for art in &mut self.artifacts {
+                    if art.is_selected && !art.is_deleted {
                         art.is_deleted = true;
                         art.is_selected = false;
-                        freed_bytes += art.size_bytes;
+                        list.push((art.target_path.clone(), art.size_bytes));
+                    }
+                }
+                list
+            }
+            ActiveTab::GlobalCaches => {
+                let mut list = Vec::new();
+                for cache in &mut self.global_caches {
+                    if cache.is_selected && !cache.is_deleted {
+                        cache.is_deleted = true;
+                        cache.is_selected = false;
+                        list.push((cache.path.clone(), cache.size_bytes));
+                    }
+                }
+                list
+            }
+        };
+
+        let total = targets.len();
+        let initial_path = targets
+            .first()
+            .map(|(p, _)| p.display().to_string())
+            .unwrap_or_default();
+
+        self.deletion_state = DeletionState::Deleting {
+            completed: 0,
+            total,
+            current_path: initial_path,
+            freed_bytes: 0,
+        };
+
+        thread::spawn(move || {
+            let mut freed_bytes = 0u64;
+            let mut errors = 0usize;
+
+            for (idx, (path, size)) in targets.into_iter().enumerate() {
+                let path_display = path.display().to_string();
+                let _ = tx.send(DeleteProgressMessage::Progress {
+                    current_index: idx + 1,
+                    total_count: total,
+                    current_path: path_display,
+                    freed_bytes,
+                });
+
+                match delete_path(&path, mode) {
+                    Ok(()) => {
+                        freed_bytes += size;
                     }
                     Err(_) => {
                         errors += 1;
                     }
                 }
             }
-        }
 
-        self.deletion_state = DeletionState::Done {
-            freed_bytes,
-            errors,
-        };
+            let _ = tx.send(DeleteProgressMessage::Done {
+                freed_bytes,
+                errors,
+            });
+        });
     }
 }

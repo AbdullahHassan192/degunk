@@ -10,12 +10,12 @@ use crate::ui::app::App;
 
 pub fn render_footer(f: &mut Frame, _app: &App, area: Rect) {
     let keybindings = vec![
-        Span::styled(" [Space] ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::styled(" [Tab] ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::styled("View  ", Style::default().fg(Color::DarkGray)),
+        Span::styled("[Space] ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
         Span::styled("Select  ", Style::default().fg(Color::DarkGray)),
-        Span::styled("[Enter/Tab] ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::styled("[Enter/e] ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
         Span::styled("Expand  ", Style::default().fg(Color::DarkGray)),
-        Span::styled("[E] ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-        Span::styled("Expand All  ", Style::default().fg(Color::DarkGray)),
         Span::styled("[a] ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
         Span::styled("All  ", Style::default().fg(Color::DarkGray)),
         Span::styled("[s] ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),

@@ -18,15 +18,20 @@ pub fn render_modal(f: &mut Frame, app: &App) {
     let area = centered_rect(65, 45, f.area());
     f.render_widget(Clear, area); // Clears the background behind the modal
 
-    match app.deletion_state {
+    match &app.deletion_state {
         DeletionState::Confirming => {
             render_confirm_modal(f, app, area);
         }
-        DeletionState::Deleting => {
-            render_progress_modal(f, app, area);
+        DeletionState::Deleting {
+            completed,
+            total,
+            current_path,
+            freed_bytes,
+        } => {
+            render_progress_modal(f, area, *completed, *total, current_path, *freed_bytes);
         }
         DeletionState::Done { freed_bytes, errors } => {
-            render_done_modal(f, area, freed_bytes, errors);
+            render_done_modal(f, area, *freed_bytes, *errors);
         }
         DeletionState::Idle => {}
     }
@@ -134,21 +139,62 @@ fn render_confirm_modal(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(paragraph, area);
 }
 
-fn render_progress_modal(f: &mut Frame, _app: &App, area: Rect) {
+fn render_progress_modal(
+    f: &mut Frame,
+    area: Rect,
+    completed: usize,
+    total: usize,
+    current_path: &str,
+    freed_bytes: u64,
+) {
+    let pct = if total > 0 {
+        (completed * 100) / total
+    } else {
+        0
+    };
+
+    let bar_width = 30usize;
+    let filled = if total > 0 {
+        (completed * bar_width) / total
+    } else {
+        0
+    };
+    let empty = bar_width.saturating_sub(filled);
+    let bar_str = format!("[{}{}] {}%", "█".repeat(filled), "░".repeat(empty), pct);
+
+    let display_path = if current_path.len() > 45 {
+        format!("...{}", &current_path[current_path.len().saturating_sub(42)..])
+    } else {
+        current_path.to_string()
+    };
+
     let lines = vec![
         Line::from(""),
         Line::from(vec![
             Span::styled("  ⏳ ", Style::default().fg(Color::Yellow)),
             Span::styled(
-                "Cleaning selected artifacts...",
+                format!("Cleaning target {} of {}...", completed, total),
                 Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
             ),
         ]),
         Line::from(""),
-        Line::from(Span::styled(
-            "  Please wait while files are being removed.",
-            Style::default().fg(Color::DarkGray),
-        )),
+        Line::from(vec![
+            Span::styled("  Progress: ", Style::default().fg(Color::DarkGray)),
+            Span::styled(bar_str, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  Reclaimed so far: ", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                format_bytes(freed_bytes),
+                Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+            ),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  Current: ", Style::default().fg(Color::DarkGray)),
+            Span::styled(display_path, Style::default().fg(Color::Yellow)),
+        ]),
     ];
 
     let block = Block::default()

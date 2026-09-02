@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::thread;
-
+use rayon::prelude::*;
 use crate::core::ecosystem::{has_lockfile, match_rule, Ecosystem};
 use crate::core::git::{inspect_project_activity, ProjectActivity};
 use crate::core::size::calculate_dir_size;
@@ -100,10 +100,22 @@ fn should_skip_dir(name: &str, path: &Path, include_cloud: bool) -> bool {
             | "program files"
             | "program files (x86)"
             | "appdata"
-            | "library"
             | "perflogs"
     ) {
         return true;
+    }
+
+    if lower_name == "library" {
+        if let Some(parent) = path.parent() {
+            if parent.parent().is_none() {
+                return true; // e.g. /Library
+            }
+        }
+        if let Ok(home) = std::env::var("HOME") {
+            if path == Path::new(&home).join("Library") {
+                return true;
+            }
+        }
     }
 
     // 3. Tool runtimes, package manager caches, IDE extensions, and SDK internals
@@ -245,7 +257,7 @@ fn scan_directory_recursive(
             Err(_) => continue,
         };
 
-        if !file_type.is_dir() {
+        if !file_type.is_dir() || file_type.is_symlink() {
             continue;
         }
 
@@ -340,18 +352,34 @@ fn scan_directory_recursive(
     }
 
     // Recurse into non-artifact subdirectories
-    for subdir in subdirs_to_recurse {
-        scan_directory_recursive(
-            &subdir,
-            root_dir,
-            tx,
-            cancel_flag,
-            id_counter,
-            total_dirs,
-            pending_tasks,
-            allowed_ecosystems,
-            include_cloud,
-        );
+    if subdirs_to_recurse.len() <= 1 {
+        for subdir in subdirs_to_recurse {
+            scan_directory_recursive(
+                &subdir,
+                root_dir,
+                tx,
+                cancel_flag,
+                id_counter,
+                total_dirs,
+                pending_tasks,
+                allowed_ecosystems,
+                include_cloud,
+            );
+        }
+    } else {
+        subdirs_to_recurse.par_iter().for_each(|subdir| {
+            scan_directory_recursive(
+                subdir,
+                root_dir,
+                tx,
+                cancel_flag,
+                id_counter,
+                total_dirs,
+                pending_tasks,
+                allowed_ecosystems,
+                include_cloud,
+            );
+        });
     }
 }
 

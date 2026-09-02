@@ -131,11 +131,15 @@ fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
             }
             _ => {}
         },
-        DeletionState::Deleting => {}
+        DeletionState::Deleting { .. } => {}
         DeletionState::Idle => {
             if app.is_searching {
                 match code {
-                    KeyCode::Esc | KeyCode::Enter => {
+                    KeyCode::Enter => {
+                        app.is_searching = false;
+                    }
+                    KeyCode::Esc => {
+                        app.search_query.clear();
                         app.is_searching = false;
                     }
                     KeyCode::Backspace => {
@@ -148,8 +152,22 @@ fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
                 }
             } else {
                 match code {
+                    KeyCode::Esc => {
+                        if !app.search_query.is_empty() {
+                            app.search_query.clear();
+                        }
+                    }
                     KeyCode::Char('q') => {
                         app.should_quit = true;
+                    }
+                    KeyCode::Tab => {
+                        app.switch_tab();
+                    }
+                    KeyCode::Char('1') => {
+                        app.active_tab = crate::ui::app::ActiveTab::Projects;
+                    }
+                    KeyCode::Char('2') => {
+                        app.active_tab = crate::ui::app::ActiveTab::GlobalCaches;
                     }
                     KeyCode::Up | KeyCode::Char('k') => {
                         app.move_up();
@@ -160,7 +178,7 @@ fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
                     KeyCode::Char(' ') => {
                         app.toggle_selection();
                     }
-                    KeyCode::Enter | KeyCode::Tab | KeyCode::Char('e') => {
+                    KeyCode::Enter | KeyCode::Char('e') => {
                         app.toggle_expand();
                     }
                     KeyCode::Right | KeyCode::Char('l') => {

@@ -14,6 +14,10 @@ pub enum Ecosystem {
     Flutter,
     Php,
     Elixir,
+    Zig,
+    Godot,
+    Unity,
+    Coverage,
 }
 
 impl Ecosystem {
@@ -30,6 +34,10 @@ impl Ecosystem {
             Ecosystem::Flutter => "Flutter/Dart",
             Ecosystem::Php => "PHP",
             Ecosystem::Elixir => "Elixir",
+            Ecosystem::Zig => "Zig",
+            Ecosystem::Godot => "Godot",
+            Ecosystem::Unity => "Unity",
+            Ecosystem::Coverage => "Coverage",
         }
     }
 
@@ -46,6 +54,10 @@ impl Ecosystem {
             Ecosystem::Flutter => "Flutter",
             Ecosystem::Php => "PHP",
             Ecosystem::Elixir => "Elixir",
+            Ecosystem::Zig => "Zig",
+            Ecosystem::Godot => "Godot",
+            Ecosystem::Unity => "Unity",
+            Ecosystem::Coverage => "Cov",
         }
     }
 
@@ -62,6 +74,10 @@ impl Ecosystem {
             "flutter" | "dart" => Some(Ecosystem::Flutter),
             "php" | "composer" => Some(Ecosystem::Php),
             "elixir" | "mix" => Some(Ecosystem::Elixir),
+            "zig" => Some(Ecosystem::Zig),
+            "godot" => Some(Ecosystem::Godot),
+            "unity" => Some(Ecosystem::Unity),
+            "coverage" | "cov" => Some(Ecosystem::Coverage),
             _ => None,
         }
     }
@@ -132,7 +148,15 @@ pub static RULES: &[ArtifactRule] = &[
         label: "Python Cache",
         ecosystem: Ecosystem::Python,
         folder_names: &["__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache"],
-        required_manifests: &["pyproject.toml", "requirements.txt", "setup.py", "setup.cfg"],
+        required_manifests: &[
+            "pyproject.toml",
+            "requirements.txt",
+            "setup.py",
+            "setup.cfg",
+            "__init__.py",
+            "__manifest__.py",
+            "*.py",
+        ],
         lockfiles: &[],
         reinstall_cmd: "Automatic upon execution",
     },
@@ -233,6 +257,51 @@ pub static RULES: &[ArtifactRule] = &[
         lockfiles: &["mix.lock"],
         reinstall_cmd: "mix deps.get && mix compile",
     },
+    // Nx Monorepo Cache
+    ArtifactRule {
+        label: "Nx Cache",
+        ecosystem: Ecosystem::Node,
+        folder_names: &[".nx"],
+        required_manifests: &["nx.json", "package.json"],
+        lockfiles: &["package-lock.json", "pnpm-lock.yaml", "yarn.lock"],
+        reinstall_cmd: "npx nx reset",
+    },
+    // Zig
+    ArtifactRule {
+        label: "Zig Build Cache",
+        ecosystem: Ecosystem::Zig,
+        folder_names: &["zig-cache", "zig-out"],
+        required_manifests: &["build.zig", "build.zig.zon"],
+        lockfiles: &["build.zig.zon"],
+        reinstall_cmd: "zig build",
+    },
+    // Godot
+    ArtifactRule {
+        label: "Godot Cache",
+        ecosystem: Ecosystem::Godot,
+        folder_names: &[".godot"],
+        required_manifests: &["project.godot"],
+        lockfiles: &[],
+        reinstall_cmd: "Open in Godot",
+    },
+    // Unity
+    ArtifactRule {
+        label: "Unity Cache & Temp",
+        ecosystem: Ecosystem::Unity,
+        folder_names: &["Library", "Temp", "Obj"],
+        required_manifests: &["ProjectSettings"],
+        lockfiles: &[],
+        reinstall_cmd: "Open in Unity",
+    },
+    // Coverage & Test Output
+    ArtifactRule {
+        label: "Test Coverage",
+        ecosystem: Ecosystem::Coverage,
+        folder_names: &["coverage", ".nyc_output", "htmlcov"],
+        required_manifests: &["package.json", "pyproject.toml", "Cargo.toml", "go.mod"],
+        lockfiles: &[],
+        reinstall_cmd: "Run test suite",
+    },
 ];
 
 /// Checks whether a directory name matches any artifact rule.
@@ -241,6 +310,12 @@ pub fn match_rule(folder_name: &str, parent_path: &Path) -> Option<&'static Arti
         if rule.folder_names.iter().any(|&f| f.eq_ignore_ascii_case(folder_name)) {
             // Verify at least one manifest matches in the parent directory
             if has_manifest(parent_path, rule.required_manifests) {
+                return Some(rule);
+            }
+            // Self-identifying Python virtualenvs: if the folder contains pyvenv.cfg, it's a virtualenv
+            if rule.ecosystem == Ecosystem::Python
+                && parent_path.join(folder_name).join("pyvenv.cfg").exists()
+            {
                 return Some(rule);
             }
         }

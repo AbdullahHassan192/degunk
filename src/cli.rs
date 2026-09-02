@@ -185,53 +185,98 @@ pub fn run_cli(cli: &Cli) {
         total_bytes += a.size_bytes;
     }
 
+    use rayon::prelude::*;
+    let mut global_caches = crate::core::global_cache::detect_global_caches();
+    global_caches.par_iter_mut().for_each(|cache| {
+        let stats = crate::core::size::calculate_dir_size(&cache.path);
+        cache.size_bytes = stats.bytes;
+        cache.file_count = stats.file_count;
+        cache.size_calculated = true;
+    });
+
     if cli.json {
-        let json_out = serde_json::to_string_pretty(&artifacts).unwrap_or_else(|_| "[]".to_string());
+        #[derive(serde::Serialize)]
+        struct OutputJson<'a> {
+            artifacts: &'a [DiscoveredArtifact],
+            global_caches: &'a [crate::core::global_cache::GlobalCacheTarget],
+        }
+        let out = OutputJson {
+            artifacts: &artifacts,
+            global_caches: &global_caches,
+        };
+        let json_out = serde_json::to_string_pretty(&out).unwrap_or_else(|_| "{}".to_string());
         println!("{}", json_out);
         return;
     }
 
     if artifacts.is_empty() {
-        println!("No cleanable artifact directories found.");
-        return;
-    }
-
-    println!(
-        "{:<32} {:<12} {:<18} {:<12} {:<15} {}",
-        "PROJECT / PATH", "TYPE", "TARGET FOLDER", "SIZE", "INACTIVITY", "LOCKFILE"
-    );
-    println!("{:-<105}", "");
-
-    for a in &artifacts {
-        let lock_str = if a.has_lockfile {
-            "Yes".to_string()
-        } else {
-            "Missing".to_string()
-        };
-
-        let inactive_str = if a.days_inactive == 0 {
-            "Active today".to_string()
-        } else {
-            format!("{}d inactive", a.days_inactive)
-        };
-
+        println!("No cleanable artifact directories found in workspace.");
+    } else {
         println!(
             "{:<32} {:<12} {:<18} {:<12} {:<15} {}",
-            truncate_str(&a.display_path, 30),
-            a.ecosystem.badge(),
-            truncate_str(&a.folder_name, 16),
-            format_bytes(a.size_bytes),
-            inactive_str,
-            lock_str
+            "PROJECT / PATH", "TYPE", "TARGET FOLDER", "SIZE", "INACTIVITY", "LOCKFILE"
+        );
+        println!("{:-<105}", "");
+
+        for a in &artifacts {
+            let lock_str = if a.has_lockfile {
+                "Yes".to_string()
+            } else {
+                "Missing".to_string()
+            };
+
+            let inactive_str = if a.days_inactive == 0 {
+                "Active today".to_string()
+            } else {
+                format!("{}d inactive", a.days_inactive)
+            };
+
+            println!(
+                "{:<32} {:<12} {:<18} {:<12} {:<15} {}",
+                truncate_str(&a.display_path, 30),
+                a.ecosystem.badge(),
+                truncate_str(&a.folder_name, 16),
+                format_bytes(a.size_bytes),
+                inactive_str,
+                lock_str
+            );
+        }
+
+        println!("{:-<105}", "");
+        println!(
+            "Found {} workspace artifacts totaling {}\n",
+            artifacts.len(),
+            format_bytes(total_bytes)
         );
     }
 
-    println!("{:-<105}", "");
-    println!(
-        "Found {} artifacts totaling {}\n",
-        artifacts.len(),
-        format_bytes(total_bytes)
-    );
+    if !global_caches.is_empty() {
+        let total_cache_bytes: u64 = global_caches.iter().map(|c| c.size_bytes).sum();
+        println!("{:=<105}", "");
+        println!("✦ Global Developer Tool Caches (Auto-Detected)");
+        println!("{:-<105}", "");
+        println!(
+            "{:<28} {:<10} {:<12} {:<12} {}",
+            "TOOL / CACHE", "TYPE", "SIZE", "FILES", "SYSTEM PATH"
+        );
+        println!("{:-<105}", "");
+        for c in &global_caches {
+            println!(
+                "{:<28} {:<10} {:<12} {:<12} {}",
+                truncate_str(&c.name, 26),
+                c.ecosystem.badge(),
+                format_bytes(c.size_bytes),
+                format!("{} files", c.file_count),
+                c.path.display()
+            );
+        }
+        println!("{:-<105}", "");
+        println!(
+            "Detected {} global tool caches totaling {}\n",
+            global_caches.len(),
+            format_bytes(total_cache_bytes)
+        );
+    }
 
     if cli.clean_all {
         if cli.dry_run {

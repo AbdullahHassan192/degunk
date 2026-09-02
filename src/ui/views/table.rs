@@ -12,6 +12,13 @@ use crate::ui::app::{App, GroupSelectionState, TableItem};
 use crate::ui::theme::Theme;
 
 pub fn render_table(f: &mut Frame, app: &mut App, area: Rect) {
+    match app.active_tab {
+        crate::ui::app::ActiveTab::Projects => render_projects_table(f, app, area),
+        crate::ui::app::ActiveTab::GlobalCaches => render_global_caches_table(f, app, area),
+    }
+}
+
+fn render_projects_table(f: &mut Frame, app: &mut App, area: Rect) {
     let visible_items = app.get_visible_table_items();
 
     let header_cells = [
@@ -353,4 +360,173 @@ pub fn render_table(f: &mut Frame, app: &mut App, area: Rect) {
 
     f.render_stateful_widget(table, area, &mut state);
 }
+
+fn render_global_caches_table(f: &mut Frame, app: &mut App, area: Rect) {
+    let visible_caches = app.get_visible_global_caches();
+
+    let header_cells = [
+        Cell::from(Span::styled(" SEL", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
+        Cell::from(Span::styled("DEVELOPER TOOL CACHE", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
+        Cell::from(Span::styled("TYPE", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
+        Cell::from(Span::styled("SYSTEM PATH", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
+        Cell::from(Span::styled("SIZE", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
+        Cell::from(Span::styled("FILES", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
+        Cell::from(Span::styled("CLEAN HINT / COMMAND", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
+    ];
+
+    let header_row = Row::new(header_cells)
+        .style(Style::default().bg(Color::Rgb(25, 30, 42)))
+        .height(1);
+
+    let rows: Vec<Row> = visible_caches
+        .iter()
+        .enumerate()
+        .map(|(idx, (_orig_idx, cache))| {
+            let is_selected_in_tui = app.selected_cache_index == idx;
+
+            let checkmark = if cache.is_deleted {
+                Span::styled(" [DEL]", Style::default().fg(Color::DarkGray))
+            } else if cache.is_selected {
+                Span::styled(
+                    " [✔] ",
+                    Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+                )
+            } else {
+                Span::styled(" [ ] ", Style::default().fg(Color::DarkGray))
+            };
+
+            let name_span = if cache.is_deleted {
+                Span::styled(
+                    &cache.name,
+                    Style::default()
+                        .fg(Color::DarkGray)
+                        .add_modifier(Modifier::CROSSED_OUT),
+                )
+            } else {
+                Span::styled(
+                    &cache.name,
+                    Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+                )
+            };
+
+            let eco_style = Style::default()
+                .fg(Color::Black)
+                .bg(Theme::ecosystem_color(cache.ecosystem))
+                .add_modifier(Modifier::BOLD);
+            let eco_span = Span::styled(format!(" {} ", cache.ecosystem.badge()), eco_style);
+
+            let path_span = Span::styled(
+                cache.path.display().to_string(),
+                Style::default().fg(if cache.is_deleted { Color::DarkGray } else { Color::LightCyan }),
+            );
+
+            let size_span = if cache.is_deleted {
+                Span::styled("cleaned", Style::default().fg(Color::DarkGray))
+            } else if cache.size_calculated {
+                Span::styled(
+                    format_bytes(cache.size_bytes),
+                    Style::default()
+                        .fg(Theme::size_color(cache.size_bytes))
+                        .add_modifier(Modifier::BOLD),
+                )
+            } else {
+                Span::styled("calc...", Style::default().fg(Color::DarkGray))
+            };
+
+            let files_span = if cache.is_deleted {
+                Span::styled("─", Style::default().fg(Color::DarkGray))
+            } else if cache.size_calculated {
+                Span::styled(
+                    format!("{} files", cache.file_count),
+                    Style::default().fg(Color::DarkGray),
+                )
+            } else {
+                Span::styled("─", Style::default().fg(Color::DarkGray))
+            };
+
+            let hint_span = Span::styled(
+                &cache.clean_hint,
+                Style::default().fg(if cache.is_deleted { Color::DarkGray } else { Color::Yellow }),
+            );
+
+            let row_style = if is_selected_in_tui {
+                Style::default().bg(Color::Rgb(40, 56, 85))
+            } else if idx % 2 == 0 {
+                Style::default().bg(Color::Rgb(24, 30, 42))
+            } else {
+                Style::default().bg(Color::Rgb(18, 22, 32))
+            };
+
+            Row::new(vec![
+                Cell::from(Line::from(checkmark)),
+                Cell::from(Line::from(name_span)),
+                Cell::from(Line::from(eco_span)),
+                Cell::from(Line::from(path_span)),
+                Cell::from(Line::from(size_span)),
+                Cell::from(Line::from(files_span)),
+                Cell::from(Line::from(hint_span)),
+            ])
+            .style(row_style)
+            .height(1)
+        })
+        .collect();
+
+    let widths = [
+        Constraint::Length(8),          // Checkbox
+        Constraint::Length(26),         // Tool / Cache Name
+        Constraint::Length(10),         // Type Badge
+        Constraint::Percentage(32),     // System Path
+        Constraint::Length(12),         // Size
+        Constraint::Length(14),         // Files
+        Constraint::Percentage(26),     // Clean Hint
+    ];
+
+    let sort_label = match app.sort_mode {
+        crate::ui::app::SortMode::SizeDesc => "Sort: SizeDesc",
+        crate::ui::app::SortMode::AgeDesc => "Sort: FilesDesc",
+        crate::ui::app::SortMode::NameAsc => "Sort: NameAsc",
+        crate::ui::app::SortMode::EcosystemAsc => "Sort: EcosystemAsc",
+    };
+
+    let title_str = if !app.search_query.is_empty() {
+        format!(
+            " Global Developer Tool Caches ({}, Filter: \"{}\") [{} matches, {}] - Press [Tab] to switch view ",
+            sort_label,
+            app.search_query,
+            visible_caches.len(),
+            format_bytes(app.get_total_global_cache_bytes())
+        )
+    } else {
+        format!(
+            " Global Developer Tool Caches ({}) ({}) - Press [Tab] to switch to Workspace Projects ",
+            sort_label,
+            format_bytes(app.get_total_global_cache_bytes())
+        )
+    };
+
+    let table = Table::new(rows, widths)
+        .header(header_row)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Cyan))
+                .title(Span::styled(
+                    title_str,
+                    Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                )),
+        )
+        .row_highlight_style(
+            Style::default()
+                .bg(Color::Rgb(45, 60, 90))
+                .add_modifier(Modifier::BOLD),
+        );
+
+    let mut state = TableState::default();
+    if !visible_caches.is_empty() {
+        state.select(Some(app.selected_cache_index));
+    }
+
+    f.render_stateful_widget(table, area, &mut state);
+}
+
 

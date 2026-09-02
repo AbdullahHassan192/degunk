@@ -47,6 +47,10 @@ impl Theme {
             Ecosystem::Flutter => Color::Rgb(2, 86, 155),    // Flutter light blue
             Ecosystem::Php => Color::Rgb(119, 123, 179),     // PHP indigo
             Ecosystem::Elixir => Color::Rgb(110, 74, 126),   // Elixir violet
+            Ecosystem::Zig => Color::Rgb(247, 164, 29),      // Zig amber
+            Ecosystem::Godot => Color::Rgb(71, 140, 194),    // Godot blue
+            Ecosystem::Unity => Color::Rgb(34, 44, 55),      // Unity dark slate
+            Ecosystem::Coverage => Color::Rgb(38, 166, 154), // Coverage teal
         }
     }
 
