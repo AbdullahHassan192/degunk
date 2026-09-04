@@ -8,10 +8,10 @@ Developers lose tens of gigabytes of disk space to old `node_modules`, `venv`, `
 
 * **Interactive path launcher**: Running `degunk` opens a path picker with your common dev folders (`~/Projects`, `~/dev`), drives, and a custom path input with paste support.
 * **Project tree view**: Monorepos, mobile apps, and fullstack projects group multiple build targets under their project root. You can collapse and expand groups with `Enter` or `e`.
-* **Deep ecosystem coverage**: Scans 20+ stacks including Node.js, Python, Rust, Go, Java/Kotlin, .NET, C/C++, Swift/iOS, Flutter, Zig, Godot, Unity, Ruby, Scala, Haskell, OCaml, and Terraform.
-* **Global developer caches**: Press `Tab` to see central caches like Cargo package checkouts, npm, pnpm, pip, Gradle daemons, Go build caches, and local AI model weights (Ollama, LM Studio, HuggingFace).
+* **Deep ecosystem coverage**: Scans 28 ecosystems including Node.js, Python, Rust, Go, Java/Kotlin, .NET, C/C++, Swift/iOS, Android/NDK, React Native/Expo, Unreal Engine, Embedded/PlatformIO, Flutter, Zig, Godot, Unity, Ruby, Scala, Haskell, OCaml, Terraform, R, Elm, Clojure, and Julia.
+* **Global developer caches**: Press `Tab` to see central caches like Cargo package checkouts, Go module caches, Playwright browser builds, npm, pnpm, pip, Gradle daemons, ccache, sccache, and local AI model weights (Ollama, LM Studio, HuggingFace).
 * **Git activity context**: Inspects each project's Git history to display days since your last commit, uncommitted local changes, and unpushed commits before you delete anything.
-* **Search filters**: Filter by ecosystem, size, or safety state using tokens like `eco:node`, `size:>500m`, `git:clean`, or `locked:yes`.
+* **Search filters**: Filter by ecosystem, size, or safety state using tokens like `eco:node`, `eco:unreal`, `size:>500m`, `git:clean`, or `locked:yes`.
 * **Safe deletion**: Moves files to your OS Trash or Recycle Bin by default, with an option for direct deletion. Handles read-only file locks on Windows and Unix cleanly.
 
 ---
@@ -72,7 +72,7 @@ degunk --clean-all --trash --older-than 90 .
 
 Type `/` to search names, folder names, and paths. You can also mix in filter tokens:
 
-* `eco:rust`, `eco:node`, `eco:python`
+* `eco:rust`, `eco:node`, `eco:python`, `eco:unreal`, `eco:android`, `eco:rn`, `eco:r`
 * `size:>100m`, `size:>1g`, `size:<50m`
 * `locked:yes`, `locked:no`
 * `git:clean`, `git:dirty`
@@ -85,26 +85,34 @@ Example: `/eco:python size:>100m git:clean`
 
 | Ecosystem | Target folders | Key markers | Lockfile |
 | :--- | :--- | :--- | :--- |
-| **Node.js / Web** | `node_modules`, `.next`, `.nuxt`, `.turbo`, `.svelte-kit`, `.angular`, `.astro`, `.parcel-cache`, `.vite`, `.docusaurus`, `storybook-static` | `package.json`, `next.config.*`, etc. | `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `bun.lockb` |
-| **Python** | `.venv`, `venv`, `env`, `__pycache__`, `.pytest_cache`, `.mypy_cache`, `dist`, `build`, `*.egg-info`, `.tox`, `.nox`, `.pixi` | `pyproject.toml`, `requirements.txt`, `Pipfile`, `setup.py` | `poetry.lock`, `Pipfile.lock`, `uv.lock`, `pdm.lock` |
+| **Node.js / Modern Web** | `node_modules`, `.next`, `.nuxt`, `.turbo`, `.svelte-kit`, `.angular`, `.astro`, `.parcel-cache`, `.vite`, `.output`, `.swc`, `.nitro`, `.wrangler`, `.vercel`, `.netlify`, `.sst`, `.cache`, `storybook-static` | `package.json`, `wrangler.toml`, `vercel.json`, `nitro.config.*`, etc. | `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `bun.lockb` |
+| **Python** | `.venv`, `venv`, `env`, `__pycache__`, `.pytest_cache`, `.mypy_cache`, `.ruff_cache`, `dist`, `build`, `*.egg-info`, `.tox`, `.nox`, `.pixi`, `.ipynb_checkpoints` | `pyproject.toml`, `requirements.txt`, `Pipfile`, `setup.py` | `poetry.lock`, `Pipfile.lock`, `uv.lock`, `pdm.lock` |
 | **Rust** | `target` | `Cargo.toml` | `Cargo.lock` |
 | **Java / Kotlin** | `build`, `.gradle`, `target` | `build.gradle`, `build.gradle.kts`, `pom.xml` | `gradle.lockfile` |
+| **Android / NDK** | `.cxx`, `.externalNativeBuild`, `build` | `build.gradle`, `build.gradle.kts`, `CMakeLists.txt`, `settings.gradle` | `gradle.lockfile` |
+| **React Native / Expo** | `.expo`, `.metro-health-check`, `ios/build`, `android/app/build` | `app.json`, `package.json`, `metro.config.js`, `expo-env.d.ts` | `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `bun.lockb` |
 | **Go** | `vendor` | `go.mod` | `go.sum` |
-| **.NET / C#** | `bin`, `obj` | `*.csproj`, `*.fsproj`, `*.sln` | `packages.lock.json` |
-| **C / C++** | `build`, `CMakeFiles`, `.vs` | `CMakeLists.txt`, `Makefile`, `*.sln` | N/A |
-| **iOS / Swift** | `.build`, `DerivedData`, `Pods` | `Package.swift`, `Podfile`, `*.xcodeproj` | `Package.resolved`, `Podfile.lock` |
+| **.NET / C#** | `bin`, `obj`, `BenchmarkDotNet.Artifacts`, `TestResults` | `*.csproj`, `*.fsproj`, `*.sln` | `packages.lock.json` |
+| **C / C++** | `build`, `CMakeFiles`, `cmake-build-*`, `builddir`, `.vs`, `vcpkg_installed` | `CMakeLists.txt`, `Makefile`, `meson.build`, `vcpkg.json`, `*.sln` | `vcpkg-lock.json` |
+| **Unreal Engine** | `Intermediate`, `Saved`, `DerivedDataCache`, `Binaries` | `*.uproject`, `*.uplugin` | N/A |
+| **Embedded / PlatformIO** | `.pio` | `platformio.ini` | N/A |
+| **iOS / Swift** | `.build`, `DerivedData`, `Pods`, `Carthage` | `Package.swift`, `Podfile`, `Cartfile`, `*.xcodeproj`, `*.xcworkspace` | `Package.resolved`, `Podfile.lock`, `Cartfile.resolved` |
 | **Flutter / Dart** | `.dart_tool`, `build` | `pubspec.yaml` | `pubspec.lock` |
 | **PHP** | `vendor` | `composer.json` | `composer.lock` |
 | **Elixir** | `_build`, `deps` | `mix.exs` | `mix.lock` |
-| **Zig** | `zig-cache`, `zig-out`, `.zig-cache` | `build.zig` | `build.zig.zon` |
-| **Godot** | `.godot`, `.import` | `project.godot` | N/A |
-| **Unity** | `Library`, `Temp`, `Obj`, `Build`, `Builds`, `Logs` | `ProjectSettings/ProjectVersion.txt` | N/A |
+| **Zig** | `zig-cache`, `zig-out` | `build.zig`, `build.zig.zon` | `build.zig.zon` |
+| **Godot** | `.godot` | `project.godot` | N/A |
+| **Unity** | `Library`, `Temp`, `Obj` | `ProjectSettings` | N/A |
 | **Ruby** | `.bundle`, `vendor` | `Gemfile` | `Gemfile.lock` |
 | **Scala** | `target`, `.bloop`, `.metals` | `build.sbt` | N/A |
-| **Haskell** | `.stack-work`, `dist-newstyle` | `stack.yaml`, `*.cabal` | N/A |
+| **Haskell** | `.stack-work`, `dist-newstyle` | `stack.yaml`, `*.cabal`, `cabal.project` | `stack.yaml.lock`, `cabal.project.freeze` |
 | **OCaml** | `_build` | `dune-project`, `dune` | `dune.lock` |
-| **Terraform / IaC** | `.terraform`, `.serverless`, `.aws-sam` | `*.tf`, `*.tofu`, `serverless.yml` | `.terraform.lock.hcl` |
-| **Coverage & Tests** | `coverage`, `.nyc_output`, `htmlcov`, `test-results`, `playwright-report` | Project test runners | N/A |
+| **R** | `.Rproj.user`, `.Rcache`, `renv/library` | `*.Rproj`, `renv.lock`, `DESCRIPTION` | `renv.lock` |
+| **Elm** | `elm-stuff` | `elm.json` | N/A |
+| **Clojure** | `.cpcache`, `.shadow-cljs`, `.calva` | `project.clj`, `deps.edn`, `shadow-cljs.edn` | N/A |
+| **Julia** | `.julia` | `Project.toml`, `JuliaProject.toml` | `Manifest.toml` |
+| **Terraform / IaC** | `.terraform`, `.serverless`, `.aws-sam` | `*.tf`, `*.tofu`, `serverless.yml`, `samconfig.toml` | `.terraform.lock.hcl` |
+| **Coverage & Tests** | `coverage`, `.nyc_output`, `htmlcov`, `test-results`, `playwright-report`, `.playwright` | Project test runners & configs | N/A |
 
 ---
 
@@ -112,8 +120,9 @@ Example: `/eco:python size:>100m git:clean`
 
 Press `Tab` in the TUI to inspect central tool caches that live outside your project folders:
 
-* **Package managers**: Cargo checkouts and git registries, npm, pnpm, Yarn, pip, uv, Bun, Pub, NuGet, Ruby gems, Coursier.
-* **Compilers and build systems**: Go build cache, Gradle daemon logs and caches, Android build artifacts, Xcode DerivedData, CocoaPods, Terraform plugins.
+* **Package managers & registries**: Cargo checkouts and git registries, Go module cache (`GOPATH/pkg/mod`), npm, pnpm, Yarn, pip, uv, Bun, Pub, NuGet, Ruby gems, Coursier, vcpkg binary archives & download cache, Homebrew bottles, R renv cache.
+* **Compilers & build systems**: Go build cache, ccache, sccache, Rustup toolchains, Zig cache, Unreal Engine Global DDC, Gradle daemon logs and caches, Android build artifacts, Android emulator AVD images, Xcode DerivedData, CocoaPods, Terraform plugins, Docker Desktop WSL virtual disk (`ext4.vhdx`).
+* **Browser binaries**: Playwright standalone browser builds (Chromium, Firefox, WebKit), Cypress desktop binary cache.
 * **AI model weights**: Ollama models (`~/.ollama/models`), LM Studio, HuggingFace Hub, PyTorch Hub cache, Whisper weights.
 * **Editor caches**: JetBrains system caches, VS Code workspace storage, Cursor workspace storage.
 
