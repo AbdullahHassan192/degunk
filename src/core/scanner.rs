@@ -148,6 +148,7 @@ fn should_skip_dir(name: &str, path: &Path, include_cloud: bool) -> bool {
             | ".nuget"
             | "site-packages"
             | ".cache"
+            | ".terraform.d"
     ) {
         return true;
     }
@@ -419,6 +420,11 @@ pub fn resolve_root_project(current_dir: &Path, root_dir: &Path) -> (PathBuf, St
                 || parent.join("pubspec.yaml").exists()
                 || parent.join("pyproject.toml").exists()
                 || parent.join("go.mod").exists()
+                || parent.join("Gemfile").exists()
+                || parent.join("build.sbt").exists()
+                || parent.join("stack.yaml").exists()
+                || parent.join("dune-project").exists()
+                || parent.join("angular.json").exists()
                 || parent.join(".git").exists();
             if has_manifest {
                 best_root = parent.to_path_buf();
@@ -444,4 +450,3 @@ pub fn resolve_root_project(current_dir: &Path, root_dir: &Path) -> (PathBuf, St
 
     (best_root, root_display, sub_path)
 }
-

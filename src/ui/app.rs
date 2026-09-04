@@ -11,6 +11,7 @@ use crate::core::global_cache::{
     detect_global_caches, start_global_cache_scan, GlobalCacheMessage, GlobalCacheTarget,
 };
 use crate::core::scanner::{DiscoveredArtifact, ScanMessage, Scanner};
+use crate::core::size::parse_size_str;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ActiveTab {
@@ -326,24 +327,13 @@ impl App {
     }
 
     pub fn get_visible_table_items(&self) -> Vec<TableItem> {
-        let q = self.search_query.to_lowercase();
+        let q = self.search_query.trim();
 
         // Filter artifacts by search query
         let filtered_artifacts: Vec<&DiscoveredArtifact> = self
             .artifacts
             .iter()
-            .filter(|a| {
-                if q.is_empty() {
-                    true
-                } else {
-                    a.root_project_name.to_lowercase().contains(&q)
-                        || a.project_name.to_lowercase().contains(&q)
-                        || a.display_path.to_lowercase().contains(&q)
-                        || a.folder_name.to_lowercase().contains(&q)
-                        || a.ecosystem.name().to_lowercase().contains(&q)
-                        || a.target_path.to_string_lossy().to_lowercase().contains(&q)
-                }
-            })
+            .filter(|a| matches_artifact_query(a, q))
             .collect();
 
         // Group filtered artifacts by root_project_name (or display_path)
@@ -499,21 +489,11 @@ impl App {
     }
 
     pub fn get_filtered_artifacts(&self) -> Vec<DiscoveredArtifact> {
-        let q = self.search_query.to_lowercase();
+        let q = self.search_query.trim();
         let mut items: Vec<DiscoveredArtifact> = self
             .artifacts
             .iter()
-            .filter(|a| {
-                if q.is_empty() {
-                    true
-                } else {
-                    a.project_name.to_lowercase().contains(&q)
-                        || a.display_path.to_lowercase().contains(&q)
-                        || a.folder_name.to_lowercase().contains(&q)
-                        || a.ecosystem.name().to_lowercase().contains(&q)
-                        || a.target_path.to_string_lossy().to_lowercase().contains(&q)
-                }
-            })
+            .filter(|a| matches_artifact_query(a, q))
             .cloned()
             .collect();
 
@@ -534,23 +514,11 @@ impl App {
     }
 
     pub fn get_visible_global_caches(&self) -> Vec<(usize, &GlobalCacheTarget)> {
-        let q = self.search_query.to_lowercase();
         let mut items: Vec<(usize, &GlobalCacheTarget)> = self
             .global_caches
             .iter()
             .enumerate()
-            .filter(|(_, c)| {
-                if q.is_empty() {
-                    true
-                } else {
-                    c.name.to_lowercase().contains(&q)
-                        || c.ecosystem.name().to_lowercase().contains(&q)
-                        || c.ecosystem.badge().to_lowercase().contains(&q)
-                        || c.path.to_string_lossy().to_lowercase().contains(&q)
-                        || c.description.to_lowercase().contains(&q)
-                        || c.clean_hint.to_lowercase().contains(&q)
-                }
-            })
+            .filter(|(_, c)| matches_global_cache_query(c, &self.search_query))
             .collect();
 
         match self.sort_mode {
@@ -678,21 +646,26 @@ impl App {
                 let visible = self.get_visible_table_items();
                 if let Some(target) = visible.get(self.selected_table_index) {
                     match target {
-                        TableItem::GroupHeader {
-                            group_key,
-                            selection_state,
-                            ..
-                        } => {
-                            let should_select = *selection_state != GroupSelectionState::All;
-                            for art in &mut self.artifacts {
-                                let art_key = if art.root_project_name.is_empty() {
-                                    &art.display_path
-                                } else {
-                                    &art.root_project_name
-                                };
-                                if art_key == group_key && !art.is_deleted {
-                                    art.is_selected = should_select;
-                                }
+                        TableItem::GroupHeader { group_key, .. } => {
+                            let key = group_key.clone();
+                            let group_arts: Vec<usize> = self
+                                .artifacts
+                                .iter()
+                                .enumerate()
+                                .filter(|(_, a)| {
+                                    let art_key = if a.root_project_name.is_empty() {
+                                        &a.display_path
+                                    } else {
+                                        &a.root_project_name
+                                    };
+                                    art_key == &key && !a.is_deleted
+                                })
+                                .map(|(idx, _)| idx)
+                                .collect();
+
+                            let any_unselected = group_arts.iter().any(|&i| !self.artifacts[i].is_selected);
+                            for idx in group_arts {
+                                self.artifacts[idx].is_selected = any_unselected;
                             }
                         }
                         TableItem::ChildArtifact { artifact_id, .. } => {
@@ -707,14 +680,11 @@ impl App {
                 }
             }
             ActiveTab::GlobalCaches => {
-                let target_idx = self
-                    .get_visible_global_caches()
-                    .get(self.selected_cache_index)
-                    .map(|(orig_idx, _)| *orig_idx);
-                if let Some(original_idx) = target_idx {
-                    if let Some(target) = self.global_caches.get_mut(original_idx) {
-                        if !target.is_deleted {
-                            target.is_selected = !target.is_selected;
+                let visible = self.get_visible_global_caches();
+                if let Some(&(original_idx, _)) = visible.get(self.selected_cache_index) {
+                    if let Some(cache) = self.global_caches.get_mut(original_idx) {
+                        if !cache.is_deleted {
+                            cache.is_selected = !cache.is_selected;
                         }
                     }
                 }
@@ -740,14 +710,7 @@ impl App {
                         self.collapsed_groups.remove(group_key);
                     }
                 }
-                TableItem::ChildArtifact { group_key, .. } => {
-                    let key = group_key.clone();
-                    if let Some(header_idx) = visible.iter().position(|it| {
-                        matches!(it, TableItem::GroupHeader { group_key: k, .. } if k == &key)
-                    }) {
-                        self.selected_table_index = header_idx;
-                    }
-                }
+                TableItem::ChildArtifact { .. } => {}
             }
         }
     }
@@ -965,4 +928,122 @@ impl App {
             });
         });
     }
+}
+
+/// Evaluates if an artifact satisfies the given search query tokens.
+pub fn matches_artifact_query(a: &DiscoveredArtifact, q: &str) -> bool {
+    let q = q.trim();
+    if q.is_empty() {
+        return true;
+    }
+
+    let tokens: Vec<&str> = q.split_whitespace().collect();
+    for token in tokens {
+        let lower_token = token.to_lowercase();
+        if let Some(eco_prefix) = lower_token
+            .strip_prefix("eco:")
+            .or_else(|| lower_token.strip_prefix("ecosystem:"))
+        {
+            if let Some(target_eco) = Ecosystem::parse(eco_prefix) {
+                if a.ecosystem != target_eco {
+                    return false;
+                }
+            } else if !a.ecosystem.name().to_lowercase().contains(eco_prefix)
+                && !a.ecosystem.badge().to_lowercase().contains(eco_prefix)
+            {
+                return false;
+            }
+        } else if let Some(size_spec) = lower_token.strip_prefix("size:>") {
+            if let Some(threshold) = parse_size_str(size_spec) {
+                if a.size_bytes < threshold {
+                    return false;
+                }
+            }
+        } else if let Some(size_spec) = lower_token.strip_prefix("size:<") {
+            if let Some(threshold) = parse_size_str(size_spec) {
+                if a.size_bytes > threshold {
+                    return false;
+                }
+            }
+        } else if lower_token == "locked:yes" || lower_token == "locked:true" {
+            if !a.has_lockfile {
+                return false;
+            }
+        } else if lower_token == "locked:no" || lower_token == "locked:false" {
+            if a.has_lockfile {
+                return false;
+            }
+        } else if lower_token == "git:clean" {
+            if !a.git_clean {
+                return false;
+            }
+        } else if lower_token == "git:dirty" {
+            if a.git_clean {
+                return false;
+            }
+        } else {
+            let matches = a.root_project_name.to_lowercase().contains(&lower_token)
+                || a.project_name.to_lowercase().contains(&lower_token)
+                || a.display_path.to_lowercase().contains(&lower_token)
+                || a.folder_name.to_lowercase().contains(&lower_token)
+                || a.rule_label.to_lowercase().contains(&lower_token)
+                || a.ecosystem.name().to_lowercase().contains(&lower_token)
+                || a.ecosystem.badge().to_lowercase().contains(&lower_token)
+                || a.target_path.to_string_lossy().to_lowercase().contains(&lower_token);
+            if !matches {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// Evaluates if a global cache target satisfies the given search query tokens.
+pub fn matches_global_cache_query(c: &GlobalCacheTarget, q: &str) -> bool {
+    let q = q.trim();
+    if q.is_empty() {
+        return true;
+    }
+
+    let tokens: Vec<&str> = q.split_whitespace().collect();
+    for token in tokens {
+        let lower_token = token.to_lowercase();
+        if let Some(eco_prefix) = lower_token
+            .strip_prefix("eco:")
+            .or_else(|| lower_token.strip_prefix("ecosystem:"))
+        {
+            if let Some(target_eco) = Ecosystem::parse(eco_prefix) {
+                if c.ecosystem != target_eco {
+                    return false;
+                }
+            } else if !c.ecosystem.name().to_lowercase().contains(eco_prefix)
+                && !c.ecosystem.badge().to_lowercase().contains(eco_prefix)
+            {
+                return false;
+            }
+        } else if let Some(size_spec) = lower_token.strip_prefix("size:>") {
+            if let Some(threshold) = parse_size_str(size_spec) {
+                if c.size_bytes < threshold {
+                    return false;
+                }
+            }
+        } else if let Some(size_spec) = lower_token.strip_prefix("size:<") {
+            if let Some(threshold) = parse_size_str(size_spec) {
+                if c.size_bytes > threshold {
+                    return false;
+                }
+            }
+        } else {
+            let matches = c.name.to_lowercase().contains(&lower_token)
+                || c.ecosystem.name().to_lowercase().contains(&lower_token)
+                || c.ecosystem.badge().to_lowercase().contains(&lower_token)
+                || c.path.to_string_lossy().to_lowercase().contains(&lower_token)
+                || c.description.to_lowercase().contains(&lower_token)
+                || c.clean_hint.to_lowercase().contains(&lower_token);
+            if !matches {
+                return false;
+            }
+        }
+    }
+    true
 }

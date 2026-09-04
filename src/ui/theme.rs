@@ -51,6 +51,11 @@ impl Theme {
             Ecosystem::Godot => Color::Rgb(71, 140, 194),    // Godot blue
             Ecosystem::Unity => Color::Rgb(34, 44, 55),      // Unity dark slate
             Ecosystem::Coverage => Color::Rgb(38, 166, 154), // Coverage teal
+            Ecosystem::Ruby => Color::Rgb(204, 52, 45),      // Ruby crimson
+            Ecosystem::Scala => Color::Rgb(222, 53, 40),     // Scala red
+            Ecosystem::Haskell => Color::Rgb(94, 80, 134),   // Haskell purple
+            Ecosystem::Ocaml => Color::Rgb(238, 106, 26),    // OCaml orange
+            Ecosystem::Terraform => Color::Rgb(123, 66, 188),// Terraform purple
         }
     }
 

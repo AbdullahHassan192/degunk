@@ -51,6 +51,32 @@ pub fn format_bytes(bytes: u64) -> String {
     }
 }
 
+/// Parses a human-readable size string (e.g. "100m", "1.5gb", "500kb", "1024") into bytes.
+pub fn parse_size_str(s: &str) -> Option<u64> {
+    let s = s.trim().to_lowercase();
+    if s.is_empty() {
+        return None;
+    }
+    const KB: u64 = 1024;
+    const MB: u64 = 1024 * KB;
+    const GB: u64 = 1024 * MB;
+    const TB: u64 = 1024 * GB;
+
+    if let Some(num) = s.strip_suffix("tb").or_else(|| s.strip_suffix('t')) {
+        num.trim().parse::<f64>().ok().map(|n| (n * TB as f64) as u64)
+    } else if let Some(num) = s.strip_suffix("gb").or_else(|| s.strip_suffix('g')) {
+        num.trim().parse::<f64>().ok().map(|n| (n * GB as f64) as u64)
+    } else if let Some(num) = s.strip_suffix("mb").or_else(|| s.strip_suffix('m')) {
+        num.trim().parse::<f64>().ok().map(|n| (n * MB as f64) as u64)
+    } else if let Some(num) = s.strip_suffix("kb").or_else(|| s.strip_suffix('k')) {
+        num.trim().parse::<f64>().ok().map(|n| (n * KB as f64) as u64)
+    } else if let Some(num) = s.strip_suffix('b') {
+        num.trim().parse::<u64>().ok()
+    } else {
+        s.parse::<u64>().ok()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -61,6 +87,15 @@ mod tests {
         assert_eq!(format_bytes(1024), "1 KB");
         assert_eq!(format_bytes(1024 * 1024 * 50), "50.0 MB");
         assert_eq!(format_bytes(1024 * 1024 * 1024 * 3), "3.00 GB");
+    }
+
+    #[test]
+    fn test_parse_size_str() {
+        assert_eq!(parse_size_str("100m"), Some(100 * 1024 * 1024));
+        assert_eq!(parse_size_str("1.5gb"), Some((1.5 * 1024.0 * 1024.0 * 1024.0) as u64));
+        assert_eq!(parse_size_str("500k"), Some(500 * 1024));
+        assert_eq!(parse_size_str("1024"), Some(1024));
+        assert_eq!(parse_size_str("invalid"), None);
     }
 
     #[test]
@@ -79,4 +114,3 @@ mod tests {
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }
-

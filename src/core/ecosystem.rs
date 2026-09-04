@@ -18,6 +18,11 @@ pub enum Ecosystem {
     Godot,
     Unity,
     Coverage,
+    Ruby,
+    Scala,
+    Haskell,
+    Ocaml,
+    Terraform,
 }
 
 impl Ecosystem {
@@ -38,6 +43,11 @@ impl Ecosystem {
             Ecosystem::Godot => "Godot",
             Ecosystem::Unity => "Unity",
             Ecosystem::Coverage => "Coverage",
+            Ecosystem::Ruby => "Ruby",
+            Ecosystem::Scala => "Scala/sbt",
+            Ecosystem::Haskell => "Haskell",
+            Ecosystem::Ocaml => "OCaml",
+            Ecosystem::Terraform => "Terraform/IaC",
         }
     }
 
@@ -58,6 +68,11 @@ impl Ecosystem {
             Ecosystem::Godot => "Godot",
             Ecosystem::Unity => "Unity",
             Ecosystem::Coverage => "Cov",
+            Ecosystem::Ruby => "Ruby",
+            Ecosystem::Scala => "Scala",
+            Ecosystem::Haskell => "Hs",
+            Ecosystem::Ocaml => "OCaml",
+            Ecosystem::Terraform => "IaC",
         }
     }
 
@@ -78,6 +93,11 @@ impl Ecosystem {
             "godot" => Some(Ecosystem::Godot),
             "unity" => Some(Ecosystem::Unity),
             "coverage" | "cov" => Some(Ecosystem::Coverage),
+            "ruby" | "rb" | "gem" | "rails" => Some(Ecosystem::Ruby),
+            "scala" | "sbt" => Some(Ecosystem::Scala),
+            "haskell" | "hs" | "cabal" | "stack" => Some(Ecosystem::Haskell),
+            "ocaml" | "ml" | "dune" | "opam" => Some(Ecosystem::Ocaml),
+            "terraform" | "tf" | "tofu" | "opentofu" | "iac" | "devops" => Some(Ecosystem::Terraform),
             _ => None,
         }
     }
@@ -135,6 +155,46 @@ pub static RULES: &[ArtifactRule] = &[
         lockfiles: &["package-lock.json", "pnpm-lock.yaml", "yarn.lock", "bun.lockb", "bun.lock"],
         reinstall_cmd: "npm run build",
     },
+    ArtifactRule {
+        label: "Angular Build Cache",
+        ecosystem: Ecosystem::Node,
+        folder_names: &[".angular"],
+        required_manifests: &["angular.json"],
+        lockfiles: &["package-lock.json", "pnpm-lock.yaml", "yarn.lock", "bun.lockb", "bun.lock"],
+        reinstall_cmd: "ng build",
+    },
+    ArtifactRule {
+        label: "Astro Cache",
+        ecosystem: Ecosystem::Node,
+        folder_names: &[".astro"],
+        required_manifests: &["astro.config.mjs", "astro.config.js", "astro.config.ts", "package.json"],
+        lockfiles: &["package-lock.json", "pnpm-lock.yaml", "yarn.lock", "bun.lockb", "bun.lock"],
+        reinstall_cmd: "npm run build",
+    },
+    ArtifactRule {
+        label: "Parcel Cache",
+        ecosystem: Ecosystem::Node,
+        folder_names: &[".parcel-cache"],
+        required_manifests: &["package.json"],
+        lockfiles: &["package-lock.json", "pnpm-lock.yaml", "yarn.lock", "bun.lockb", "bun.lock"],
+        reinstall_cmd: "npm run build",
+    },
+    ArtifactRule {
+        label: "Vite & Docs Cache",
+        ecosystem: Ecosystem::Node,
+        folder_names: &[".vite", ".docusaurus", "storybook-static"],
+        required_manifests: &["package.json", "vite.config.js", "vite.config.ts", "vite.config.mjs", "docusaurus.config.js"],
+        lockfiles: &["package-lock.json", "pnpm-lock.yaml", "yarn.lock"],
+        reinstall_cmd: "npm run build",
+    },
+    ArtifactRule {
+        label: "Nx Cache",
+        ecosystem: Ecosystem::Node,
+        folder_names: &[".nx"],
+        required_manifests: &["nx.json", "package.json"],
+        lockfiles: &["package-lock.json", "pnpm-lock.yaml", "yarn.lock"],
+        reinstall_cmd: "npx nx reset",
+    },
     // Python
     ArtifactRule {
         label: "Python Virtualenv",
@@ -157,6 +217,38 @@ pub static RULES: &[ArtifactRule] = &[
             "__manifest__.py",
             "*.py",
         ],
+        lockfiles: &[],
+        reinstall_cmd: "Automatic upon execution",
+    },
+    ArtifactRule {
+        label: "Python Build & Dist",
+        ecosystem: Ecosystem::Python,
+        folder_names: &["dist", "build", "*.egg-info"],
+        required_manifests: &["pyproject.toml", "setup.py", "setup.cfg"],
+        lockfiles: &[],
+        reinstall_cmd: "python -m build",
+    },
+    ArtifactRule {
+        label: "Tox / Nox Envs",
+        ecosystem: Ecosystem::Python,
+        folder_names: &[".tox", ".nox"],
+        required_manifests: &["tox.ini", "noxfile.py", "pyproject.toml"],
+        lockfiles: &[],
+        reinstall_cmd: "tox / nox",
+    },
+    ArtifactRule {
+        label: "Pixi Environment",
+        ecosystem: Ecosystem::Python,
+        folder_names: &[".pixi"],
+        required_manifests: &["pixi.toml"],
+        lockfiles: &["pixi.lock"],
+        reinstall_cmd: "pixi install",
+    },
+    ArtifactRule {
+        label: "Jupyter Checkpoints",
+        ecosystem: Ecosystem::Python,
+        folder_names: &[".ipynb_checkpoints"],
+        required_manifests: &["*.ipynb", "pyproject.toml", "requirements.txt"],
         lockfiles: &[],
         reinstall_cmd: "Automatic upon execution",
     },
@@ -257,15 +349,6 @@ pub static RULES: &[ArtifactRule] = &[
         lockfiles: &["mix.lock"],
         reinstall_cmd: "mix deps.get && mix compile",
     },
-    // Nx Monorepo Cache
-    ArtifactRule {
-        label: "Nx Cache",
-        ecosystem: Ecosystem::Node,
-        folder_names: &[".nx"],
-        required_manifests: &["nx.json", "package.json"],
-        lockfiles: &["package-lock.json", "pnpm-lock.yaml", "yarn.lock"],
-        reinstall_cmd: "npx nx reset",
-    },
     // Zig
     ArtifactRule {
         label: "Zig Build Cache",
@@ -293,12 +376,72 @@ pub static RULES: &[ArtifactRule] = &[
         lockfiles: &[],
         reinstall_cmd: "Open in Unity",
     },
+    // Ruby
+    ArtifactRule {
+        label: "Ruby Gems & Bundle",
+        ecosystem: Ecosystem::Ruby,
+        folder_names: &[".bundle", "vendor"],
+        required_manifests: &["Gemfile"],
+        lockfiles: &["Gemfile.lock"],
+        reinstall_cmd: "bundle install",
+    },
+    // Scala / sbt
+    ArtifactRule {
+        label: "sbt Build & Bloop",
+        ecosystem: Ecosystem::Scala,
+        folder_names: &["target", ".bloop", ".metals"],
+        required_manifests: &["build.sbt"],
+        lockfiles: &["build.sbt"],
+        reinstall_cmd: "sbt compile",
+    },
+    // Haskell
+    ArtifactRule {
+        label: "Haskell Build",
+        ecosystem: Ecosystem::Haskell,
+        folder_names: &[".stack-work", "dist-newstyle"],
+        required_manifests: &["stack.yaml", "*.cabal", "cabal.project"],
+        lockfiles: &["stack.yaml.lock", "cabal.project.freeze"],
+        reinstall_cmd: "stack build / cabal build",
+    },
+    // OCaml
+    ArtifactRule {
+        label: "Dune Build",
+        ecosystem: Ecosystem::Ocaml,
+        folder_names: &["_build"],
+        required_manifests: &["dune-project", "dune"],
+        lockfiles: &["dune.lock"],
+        reinstall_cmd: "dune build",
+    },
+    // Terraform / DevOps
+    ArtifactRule {
+        label: "Terraform Providers Cache",
+        ecosystem: Ecosystem::Terraform,
+        folder_names: &[".terraform"],
+        required_manifests: &["*.tf", "*.tofu", "terragrunt.hcl"],
+        lockfiles: &[".terraform.lock.hcl"],
+        reinstall_cmd: "terraform init",
+    },
+    ArtifactRule {
+        label: "Serverless & SAM Artifacts",
+        ecosystem: Ecosystem::Terraform,
+        folder_names: &[".serverless", ".aws-sam"],
+        required_manifests: &["serverless.yml", "serverless.ts", "template.yaml", "samconfig.toml"],
+        lockfiles: &[],
+        reinstall_cmd: "serverless package / sam build",
+    },
     // Coverage & Test Output
     ArtifactRule {
-        label: "Test Coverage",
+        label: "Test Coverage & Reports",
         ecosystem: Ecosystem::Coverage,
-        folder_names: &["coverage", ".nyc_output", "htmlcov"],
-        required_manifests: &["package.json", "pyproject.toml", "Cargo.toml", "go.mod"],
+        folder_names: &["coverage", ".nyc_output", "htmlcov", "test-results", "playwright-report", ".playwright"],
+        required_manifests: &[
+            "package.json",
+            "pyproject.toml",
+            "Cargo.toml",
+            "go.mod",
+            "playwright.config.ts",
+            "playwright.config.js",
+        ],
         lockfiles: &[],
         reinstall_cmd: "Run test suite",
     },
@@ -307,7 +450,14 @@ pub static RULES: &[ArtifactRule] = &[
 /// Checks whether a directory name matches any artifact rule.
 pub fn match_rule(folder_name: &str, parent_path: &Path) -> Option<&'static ArtifactRule> {
     for rule in RULES {
-        if rule.folder_names.iter().any(|&f| f.eq_ignore_ascii_case(folder_name)) {
+        if rule.folder_names.iter().any(|&f| {
+            if f.starts_with("*.") {
+                let ext = &f[1..];
+                folder_name.to_lowercase().ends_with(&ext.to_lowercase())
+            } else {
+                f.eq_ignore_ascii_case(folder_name)
+            }
+        }) {
             // Verify at least one manifest matches in the parent directory
             if has_manifest(parent_path, rule.required_manifests) {
                 return Some(rule);
@@ -369,6 +519,11 @@ mod tests {
         assert_eq!(Ecosystem::parse("python"), Some(Ecosystem::Python));
         assert_eq!(Ecosystem::parse("rust"), Some(Ecosystem::Rust));
         assert_eq!(Ecosystem::parse("golang"), Some(Ecosystem::Go));
+        assert_eq!(Ecosystem::parse("ruby"), Some(Ecosystem::Ruby));
+        assert_eq!(Ecosystem::parse("scala"), Some(Ecosystem::Scala));
+        assert_eq!(Ecosystem::parse("haskell"), Some(Ecosystem::Haskell));
+        assert_eq!(Ecosystem::parse("ocaml"), Some(Ecosystem::Ocaml));
+        assert_eq!(Ecosystem::parse("terraform"), Some(Ecosystem::Terraform));
         assert_eq!(Ecosystem::parse("unknown_xyz"), None);
     }
 
@@ -385,4 +540,3 @@ mod tests {
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }
-

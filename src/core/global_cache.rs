@@ -34,38 +34,43 @@ pub enum GlobalCacheMessage {
     Finished,
 }
 
-fn home_dir() -> Option<PathBuf> {
-    std::env::var("USERPROFILE")
-        .or_else(|_| std::env::var("HOME"))
-        .ok()
-        .map(PathBuf::from)
-}
-
-fn local_appdata() -> Option<PathBuf> {
-    std::env::var("LOCALAPPDATA").ok().map(PathBuf::from)
-}
+type CacheCandidateSpec = (
+    &'static str,
+    Ecosystem,
+    &'static str,
+    &'static str,
+    Vec<Option<PathBuf>>,
+);
 
 /// Detects well-known developer tool global caches present on the system.
 pub fn detect_global_caches() -> Vec<GlobalCacheTarget> {
     let mut targets = Vec::new();
-    let home = home_dir();
-    let local = local_appdata();
+    let home = dirs::home_dir();
+    let cache = dirs::cache_dir();
+    let config = dirs::config_dir();
+    let data_local = dirs::data_local_dir();
     let mut id = 0;
 
-    let specs: Vec<(&str, Ecosystem, &str, &str, Vec<Option<PathBuf>>)> = vec![
+    let specs: Vec<CacheCandidateSpec> = vec![
         (
             "Cargo Package Cache",
             Ecosystem::Rust,
             "Downloaded crate archives (.crate files)",
             "cargo cache -a or delete",
-            vec![home.as_ref().map(|h| h.join(".cargo").join("registry"))],
+            vec![
+                std::env::var("CARGO_HOME").ok().map(PathBuf::from).map(|p| p.join("registry")),
+                home.as_ref().map(|h| h.join(".cargo").join("registry")),
+            ],
         ),
         (
             "Cargo Git Checkouts",
             Ecosystem::Rust,
             "Cloned git dependencies for Rust projects",
             "cargo cache -g or delete",
-            vec![home.as_ref().map(|h| h.join(".cargo").join("git"))],
+            vec![
+                std::env::var("CARGO_HOME").ok().map(PathBuf::from).map(|p| p.join("git")),
+                home.as_ref().map(|h| h.join(".cargo").join("git")),
+            ],
         ),
         (
             "npm Cache",
@@ -73,7 +78,8 @@ pub fn detect_global_caches() -> Vec<GlobalCacheTarget> {
             "Downloaded npm package tarballs and metadata",
             "npm cache clean --force",
             vec![
-                local.as_ref().map(|l| l.join("npm-cache")),
+                cache.as_ref().map(|c| c.join("npm-cache")),
+                config.as_ref().map(|c| c.join("npm-cache")),
                 home.as_ref().map(|h| h.join(".npm")),
             ],
         ),
@@ -83,7 +89,8 @@ pub fn detect_global_caches() -> Vec<GlobalCacheTarget> {
             "Content-addressable package store",
             "pnpm store prune",
             vec![
-                local.as_ref().map(|l| l.join("pnpm").join("store")),
+                data_local.as_ref().map(|d| d.join("pnpm").join("store")),
+                home.as_ref().map(|h| h.join("Library").join("pnpm").join("store")),
                 home.as_ref().map(|h| h.join(".local").join("share").join("pnpm").join("store")),
             ],
         ),
@@ -93,8 +100,9 @@ pub fn detect_global_caches() -> Vec<GlobalCacheTarget> {
             "Downloaded Yarn packages and metadata",
             "yarn cache clean",
             vec![
-                local.as_ref().map(|l| l.join("Yarn").join("Cache")),
-                home.as_ref().map(|h| h.join(".cache").join("yarn")),
+                cache.as_ref().map(|c| c.join("Yarn").join("Cache")),
+                cache.as_ref().map(|c| c.join("yarn")),
+                cache.as_ref().map(|c| c.join("Yarn")),
             ],
         ),
         (
@@ -103,8 +111,8 @@ pub fn detect_global_caches() -> Vec<GlobalCacheTarget> {
             "Cached wheels and source archives for pip",
             "pip cache purge",
             vec![
-                local.as_ref().map(|l| l.join("pip").join("Cache")),
-                home.as_ref().map(|h| h.join(".cache").join("pip")),
+                cache.as_ref().map(|c| c.join("pip").join("Cache")),
+                cache.as_ref().map(|c| c.join("pip")),
             ],
         ),
         (
@@ -113,8 +121,8 @@ pub fn detect_global_caches() -> Vec<GlobalCacheTarget> {
             "Fast Python package and environment cache",
             "uv cache clean",
             vec![
-                local.as_ref().map(|l| l.join("uv").join("cache")),
-                home.as_ref().map(|h| h.join(".cache").join("uv")),
+                cache.as_ref().map(|c| c.join("uv").join("cache")),
+                cache.as_ref().map(|c| c.join("uv")),
             ],
         ),
         (
@@ -123,6 +131,13 @@ pub fn detect_global_caches() -> Vec<GlobalCacheTarget> {
             "Downloaded jar dependencies and distribution zips",
             "Delete or rebuild via gradle",
             vec![home.as_ref().map(|h| h.join(".gradle").join("caches"))],
+        ),
+        (
+            "Gradle Daemon Logs & State",
+            Ecosystem::Java,
+            "Accumulated Gradle background daemon logs and heap dumps",
+            "./gradlew --stop or delete",
+            vec![home.as_ref().map(|h| h.join(".gradle").join("daemon"))],
         ),
         (
             "Maven Repository",
@@ -137,38 +152,60 @@ pub fn detect_global_caches() -> Vec<GlobalCacheTarget> {
             "Compiled Go packages and build artifacts",
             "go clean -cache",
             vec![
-                local.as_ref().map(|l| l.join("go-build")),
-                home.as_ref().map(|h| h.join(".cache").join("go-build")),
+                std::env::var("GOCACHE").ok().map(PathBuf::from),
+                cache.as_ref().map(|c| c.join("go-build")),
             ],
         ),
         (
             "Pub Cache (Dart/Flutter)",
             Ecosystem::Flutter,
-            "Hosted and git packages for Dart and Flutter",
+            "Hosted and git packages downloaded by pub",
             "dart pub cache clean",
             vec![
-                local.as_ref().map(|l| l.join("Pub").join("Cache")),
+                std::env::var("PUB_CACHE").ok().map(PathBuf::from),
+                cache.as_ref().map(|c| c.join("Pub").join("Cache")),
                 home.as_ref().map(|h| h.join(".pub-cache")),
             ],
         ),
         (
             "Dart Analysis Server Cache",
             Ecosystem::Flutter,
-            "Symbol index and analysis driver cache for Dart/Flutter",
-            "dart pub cache clean or delete",
+            "Symbol indexes and analysis cache for Dart/Flutter",
+            "Delete folder to regenerate",
             vec![
-                local.as_ref().map(|l| l.join(".dartServer")),
+                cache.as_ref().map(|c| c.join(".dartServer")),
                 home.as_ref().map(|h| h.join(".dartServer")),
+                cache.as_ref().map(|c| c.join("dartServer")),
             ],
         ),
         (
             "Bun Package Cache",
             Ecosystem::Node,
-            "Cached packages and modules for Bun runtime",
+            "Downloaded npm tarballs and git repos for Bun",
             "bun pm cache rm",
             vec![
                 home.as_ref().map(|h| h.join(".bun").join("install").join("cache")),
-                local.as_ref().map(|l| l.join("bun").join("install").join("cache")),
+                cache.as_ref().map(|c| c.join("bun").join("install").join("cache")),
+            ],
+        ),
+        (
+            "Ollama Model Weights",
+            Ecosystem::Python,
+            "Downloaded local LLM model weights and blobs",
+            "ollama rm <model> or delete",
+            vec![
+                std::env::var("OLLAMA_MODELS").ok().map(PathBuf::from),
+                home.as_ref().map(|h| h.join(".ollama").join("models")),
+            ],
+        ),
+        (
+            "LM Studio Model Weights",
+            Ecosystem::Python,
+            "Downloaded local LLMs and GGUFs via LM Studio",
+            "Delete models in LM Studio or delete folder",
+            vec![
+                cache.as_ref().map(|c| c.join("lm-studio").join("models")),
+                home.as_ref().map(|h| h.join(".lmstudio").join("models")),
             ],
         ),
         (
@@ -176,7 +213,10 @@ pub fn detect_global_caches() -> Vec<GlobalCacheTarget> {
             Ecosystem::Python,
             "Downloaded OpenAI Whisper model checkpoints",
             "Delete unused model weights",
-            vec![home.as_ref().map(|h| h.join(".cache").join("whisper"))],
+            vec![
+                cache.as_ref().map(|c| c.join("whisper")),
+                home.as_ref().map(|h| h.join(".cache").join("whisper")),
+            ],
         ),
         (
             "HuggingFace Hub Cache",
@@ -184,6 +224,10 @@ pub fn detect_global_caches() -> Vec<GlobalCacheTarget> {
             "Cached models, datasets and tokenizer weights",
             "huggingface-cli delete-cache or delete",
             vec![
+                std::env::var("HF_HOME").ok().map(PathBuf::from).map(|p| p.join("hub")),
+                std::env::var("HF_HOME").ok().map(PathBuf::from),
+                cache.as_ref().map(|c| c.join("huggingface").join("hub")),
+                cache.as_ref().map(|c| c.join("huggingface")),
                 home.as_ref().map(|h| h.join(".cache").join("huggingface").join("hub")),
                 home.as_ref().map(|h| h.join(".cache").join("huggingface")),
             ],
@@ -193,7 +237,11 @@ pub fn detect_global_caches() -> Vec<GlobalCacheTarget> {
             Ecosystem::Python,
             "Pretrained model checkpoints downloaded via torch.hub",
             "Delete or clear torch cache",
-            vec![home.as_ref().map(|h| h.join(".cache").join("torch").join("hub"))],
+            vec![
+                std::env::var("TORCH_HOME").ok().map(PathBuf::from),
+                cache.as_ref().map(|c| c.join("torch").join("hub")),
+                home.as_ref().map(|h| h.join(".cache").join("torch").join("hub")),
+            ],
         ),
         (
             "Android Build Cache",
@@ -212,7 +260,8 @@ pub fn detect_global_caches() -> Vec<GlobalCacheTarget> {
             "dotnet nuget locals all --clear",
             vec![
                 home.as_ref().map(|h| h.join(".nuget").join("packages")),
-                local.as_ref().map(|l| l.join("NuGet").join("Cache")),
+                cache.as_ref().map(|c| c.join("NuGet").join("Cache")),
+                cache.as_ref().map(|c| c.join("NuGet").join("v3-cache")),
             ],
         ),
         (
@@ -221,9 +270,88 @@ pub fn detect_global_caches() -> Vec<GlobalCacheTarget> {
             "Remote modules and npm packages cached by Deno",
             "deno clean",
             vec![
-                local.as_ref().map(|l| l.join("deno")),
-                home.as_ref().map(|h| h.join(".cache").join("deno")),
+                std::env::var("DENO_DIR").ok().map(PathBuf::from),
+                cache.as_ref().map(|c| c.join("deno")),
             ],
+        ),
+        (
+            "Ruby Gems Cache",
+            Ecosystem::Ruby,
+            "Cached Ruby gem archives and spec indexes",
+            "gem cleanup",
+            vec![
+                home.as_ref().map(|h| h.join(".gem").join("specs")),
+                home.as_ref().map(|h| h.join(".bundle").join("cache")),
+            ],
+        ),
+        (
+            "Coursier Cache (Scala/sbt)",
+            Ecosystem::Scala,
+            "Downloaded Scala dependencies and coursier artifacts",
+            "cs cache clean or delete",
+            vec![
+                cache.as_ref().map(|c| c.join("Coursier").join("cache")),
+                cache.as_ref().map(|c| c.join("coursier")),
+                cache.as_ref().map(|c| c.join("Coursier")),
+            ],
+        ),
+        (
+            "Haskell Stack Cache",
+            Ecosystem::Haskell,
+            "Precompiled snapshots and package indexes for Stack",
+            "stack purge or delete",
+            vec![
+                home.as_ref().map(|h| h.join(".stack").join("indices")),
+                home.as_ref().map(|h| h.join(".stack").join("snapshots")),
+            ],
+        ),
+        (
+            "Xcode DerivedData (Global)",
+            Ecosystem::Swift,
+            "Global Xcode intermediate build outputs and module caches",
+            "rm -rf ~/Library/Developer/Xcode/DerivedData/*",
+            vec![home.as_ref().map(|h| h.join("Library").join("Developer").join("Xcode").join("DerivedData"))],
+        ),
+        (
+            "CocoaPods Cache",
+            Ecosystem::Swift,
+            "Downloaded CocoaPods spec and package archives",
+            "pod cache clean --all",
+            vec![
+                home.as_ref().map(|h| h.join(".cocoapods").join("cache")),
+                cache.as_ref().map(|c| c.join("CocoaPods")),
+            ],
+        ),
+        (
+            "Terraform Provider Cache",
+            Ecosystem::Terraform,
+            "Downloaded Terraform and OpenTofu provider plugins",
+            "Delete unused provider plugins",
+            vec![
+                home.as_ref().map(|h| h.join(".terraform.d").join("plugin-cache")),
+                config.as_ref().map(|c| c.join("terraform.d").join("plugin-cache")),
+            ],
+        ),
+        (
+            "JetBrains System Caches",
+            Ecosystem::Java,
+            "IDE compiler caches, indexes, and symbol databases",
+            "File -> Invalidate Caches in IDE or delete",
+            vec![cache.as_ref().map(|c| c.join("JetBrains"))],
+        ),
+        (
+            "VS Code Workspace Storage",
+            Ecosystem::Node,
+            "Workspace language server indexes, state, and backup trees",
+            "Delete stale workspace hashes",
+            vec![config.as_ref().map(|c| c.join("Code").join("User").join("workspaceStorage"))],
+        ),
+        (
+            "Cursor Workspace Storage",
+            Ecosystem::Node,
+            "Cursor IDE workspace index databases and state",
+            "Delete stale workspace hashes",
+            vec![config.as_ref().map(|c| c.join("Cursor").join("User").join("workspaceStorage"))],
         ),
     ];
 
