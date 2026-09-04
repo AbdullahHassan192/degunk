@@ -2,11 +2,14 @@ use crossbeam_channel::Receiver;
 use ratatui::widgets::TableState;
 use std::collections::HashSet;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::thread;
 
-use crate::core::deleter::{delete_path_with_progress, DeleteMode, DeleteProgressMessage};
+use crate::core::deleter::{
+    delete_path_with_progress, get_error_log_path, log_deletion_errors, DeleteMode,
+    DeleteProgressMessage, DeletionTargetError,
+};
 use crate::core::ecosystem::Ecosystem;
 use crate::core::global_cache::{
     detect_global_caches, start_global_cache_scan, GlobalCacheMessage, GlobalCacheTarget,
@@ -58,6 +61,8 @@ pub enum DeletionState {
         errors: usize,
         mode: DeleteMode,
         cancelled: bool,
+        error_details: Vec<String>,
+        log_path: Option<PathBuf>,
     },
 }
 
@@ -432,7 +437,11 @@ impl App {
                             mode,
                         };
                     }
-                    DeleteProgressMessage::TargetFinished { path, success } => {
+                    DeleteProgressMessage::TargetFinished {
+                        path,
+                        success,
+                        freed_bytes,
+                    } => {
                         self.deleting_paths.remove(&path);
                         if success {
                             for art in &mut self.artifacts {
@@ -447,6 +456,17 @@ impl App {
                                     cache.is_selected = false;
                                 }
                             }
+                        } else if freed_bytes > 0 {
+                            for art in &mut self.artifacts {
+                                if art.target_path == path {
+                                    art.size_bytes = art.size_bytes.saturating_sub(freed_bytes);
+                                }
+                            }
+                            for cache in &mut self.global_caches {
+                                if cache.path == path {
+                                    cache.size_bytes = cache.size_bytes.saturating_sub(freed_bytes);
+                                }
+                            }
                         }
                     }
                     DeleteProgressMessage::Done {
@@ -454,6 +474,8 @@ impl App {
                         errors,
                         mode,
                         cancelled,
+                        error_details,
+                        log_path,
                     } => {
                         self.deleting_paths.clear();
                         self.deletion_state = DeletionState::Done {
@@ -461,6 +483,8 @@ impl App {
                             errors,
                             mode,
                             cancelled,
+                            error_details,
+                            log_path,
                         };
                         self.deletion_cancel = None;
                         deletion_finished = true;
@@ -1080,6 +1104,7 @@ impl App {
         thread::spawn(move || {
             let mut total_freed_bytes = 0u64;
             let mut errors = 0usize;
+            let mut target_errors: Vec<DeletionTargetError> = Vec::new();
 
             for (idx, (path, target_size)) in targets.into_iter().enumerate() {
                 if cancel_thread.load(Ordering::Relaxed) {
@@ -1102,42 +1127,53 @@ impl App {
                 let tx_clone = tx.clone();
                 let path_disp_clone = path_display.clone();
 
-                let mut current_target_freed = 0u64;
+                let current_target_freed = Arc::new(AtomicU64::new(0));
+                let target_freed_clone = current_target_freed.clone();
+
                 let result = delete_path_with_progress(
                     &path,
                     mode,
                     &cancel_thread,
                     move |incremental_bytes| {
-                        current_target_freed += incremental_bytes;
+                        let current = target_freed_clone.fetch_add(incremental_bytes, Ordering::Relaxed) + incremental_bytes;
                         let _ = tx_clone.send(DeleteProgressMessage::Progress {
                             current_target,
                             total_targets,
                             completed_targets,
                             current_path: path_disp_clone.clone(),
-                            freed_bytes: total_freed_bytes + current_target_freed,
+                            freed_bytes: total_freed_bytes + current,
                             total_bytes,
                             mode,
                         });
                     },
                 );
 
+                let freed_in_target = current_target_freed.load(Ordering::Relaxed);
                 let is_cancelled = cancel_thread.load(Ordering::Relaxed);
                 let success = result.is_ok();
-                if success {
-                    if current_target_freed == 0 {
-                        total_freed_bytes += target_size;
+                let target_freed = if success {
+                    if freed_in_target == 0 {
+                        target_size
                     } else {
-                        total_freed_bytes += current_target_freed;
+                        freed_in_target
                     }
-                } else if !is_cancelled {
-                    errors += 1;
                 } else {
-                    total_freed_bytes += current_target_freed;
+                    freed_in_target
+                };
+
+                total_freed_bytes += target_freed;
+
+                if !success && !is_cancelled {
+                    errors += 1;
+                    if let Err(e) = result {
+                        target_errors.push(e);
+                    }
                 }
 
                 let _ = tx.send(DeleteProgressMessage::TargetFinished {
                     path: path.clone(),
                     success,
+                    freed_bytes: target_freed,
                 });
 
                 if is_cancelled {
@@ -1156,11 +1192,36 @@ impl App {
             }
 
             let was_cancelled = cancel_thread.load(Ordering::Relaxed);
+
+            let log_path = if !target_errors.is_empty() {
+                log_deletion_errors(&target_errors);
+                Some(get_error_log_path())
+            } else {
+                None
+            };
+
+            let mut error_details = Vec::new();
+            for err in &target_errors {
+                if err.file_errors.is_empty() {
+                    error_details.push(format!("{}: {}", err.target_path.display(), err.message));
+                } else {
+                    for (file_p, file_msg) in &err.file_errors {
+                        let display_p = file_p
+                            .strip_prefix(&err.target_path)
+                            .map(|rel| rel.display().to_string())
+                            .unwrap_or_else(|_| file_p.display().to_string());
+                        error_details.push(format!("{}: {}", display_p, file_msg));
+                    }
+                }
+            }
+
             let _ = tx.send(DeleteProgressMessage::Done {
                 freed_bytes: total_freed_bytes,
                 errors,
                 mode,
                 cancelled: was_cancelled,
+                error_details,
+                log_path,
             });
         });
     }

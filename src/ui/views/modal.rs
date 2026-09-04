@@ -22,7 +22,10 @@ pub fn render_modal(f: &mut Frame, app: &App) {
         return;
     }
 
-    let area = centered_rect(65, 50, f.area());
+    let area = match &app.deletion_state {
+        DeletionState::Done { errors, .. } if *errors > 0 => centered_rect(72, 65, f.area()),
+        _ => centered_rect(65, 50, f.area()),
+    };
     f.render_widget(Clear, area); // Clears the background behind the modal
 
     match &app.deletion_state {
@@ -62,8 +65,19 @@ pub fn render_modal(f: &mut Frame, app: &App) {
             errors,
             mode,
             cancelled,
+            error_details,
+            log_path,
         } => {
-            render_done_modal(f, area, *freed_bytes, *errors, *mode, *cancelled);
+            render_done_modal(
+                f,
+                area,
+                *freed_bytes,
+                *errors,
+                *mode,
+                *cancelled,
+                error_details,
+                log_path.as_deref(),
+            );
         }
         DeletionState::Idle => {}
     }
@@ -324,6 +338,8 @@ fn render_done_modal(
     errors: usize,
     mode: DeleteMode,
     cancelled: bool,
+    error_details: &[String],
+    log_path: Option<&std::path::Path>,
 ) {
     let mut lines = if cancelled {
         vec![
@@ -402,10 +418,43 @@ fn render_done_modal(
 
     if errors > 0 {
         lines.push(Line::from(""));
-        lines.push(Line::from(Span::styled(
-            format!("  ⚠  Encountered {} error(s) during deletion.", errors),
-            Style::default().fg(Color::Red),
-        )));
+        lines.push(Line::from(vec![
+            Span::styled("  ⚠  ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                format!("Encountered {} error(s) during deletion:", errors),
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            ),
+        ]));
+
+        for detail in error_details.iter().take(3) {
+            let max_w = (area.width as usize).saturating_sub(12).max(30);
+            let truncated = if detail.len() > max_w {
+                format!("{}...", &detail[..max_w.saturating_sub(3)])
+            } else {
+                detail.clone()
+            };
+            lines.push(Line::from(vec![
+                Span::styled("    • ", Style::default().fg(Color::Yellow)),
+                Span::styled(truncated, Style::default().fg(Color::LightRed)),
+            ]));
+        }
+        if error_details.len() > 3 {
+            lines.push(Line::from(Span::styled(
+                format!("    ... and {} more error(s)", error_details.len() - 3),
+                Style::default().fg(Color::DarkGray),
+            )));
+        }
+
+        if let Some(log_p) = log_path {
+            lines.push(Line::from(""));
+            lines.push(Line::from(vec![
+                Span::styled("  Error log: ", Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    log_p.display().to_string(),
+                    Style::default().fg(Color::Cyan),
+                ),
+            ]));
+        }
     }
 
     lines.push(Line::from(""));

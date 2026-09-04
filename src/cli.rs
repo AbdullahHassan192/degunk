@@ -2,7 +2,9 @@ use clap::Parser;
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use crate::core::deleter::{delete_path, DeleteMode};
+use crate::core::deleter::{
+    delete_path, get_error_log_path, log_deletion_errors, DeleteMode, DeletionTargetError,
+};
 use crate::core::ecosystem::Ecosystem;
 use crate::core::scanner::{DiscoveredArtifact, ScanMessage, Scanner};
 use crate::core::size::format_bytes;
@@ -302,6 +304,7 @@ pub fn run_cli(cli: &Cli) {
         println!("Cleaning {} artifacts using {:?} mode...", artifacts.len(), mode);
         let mut freed = 0u64;
         let mut error_count = 0usize;
+        let mut target_errors: Vec<DeletionTargetError> = Vec::new();
 
         for art in &artifacts {
             match delete_path(&art.target_path, mode) {
@@ -311,9 +314,18 @@ pub fn run_cli(cli: &Cli) {
                 }
                 Err(e) => {
                     error_count += 1;
-                    eprintln!("  [ERROR] {}: {}", art.target_path.display(), e);
+                    eprintln!("  [ERROR] {}", e);
+                    target_errors.push(e);
                 }
             }
+        }
+
+        if !target_errors.is_empty() {
+            log_deletion_errors(&target_errors);
+            eprintln!(
+                "\nDetailed error log written to: {}",
+                get_error_log_path().display()
+            );
         }
 
         println!("\nClean complete. Reclaimed {} ({} errors).", format_bytes(freed), error_count);
