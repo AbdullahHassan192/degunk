@@ -15,7 +15,7 @@ pub fn render_header(f: &mut Frame, app: &App, area: Rect) {
         .constraints([
             Constraint::Length(18), // Title & Version
             Constraint::Min(44),    // View Tabs
-            Constraint::Length(38), // Space Stats & Selection
+            Constraint::Length(36), // Space Stats & Selection
         ])
         .split(area);
 
@@ -59,18 +59,17 @@ pub fn render_header(f: &mut Frame, app: &App, area: Rect) {
         Span::styled(format!(" [1] Projects ({}) ", proj_total), tab1_style),
         Span::raw(" "),
         Span::styled(format!(" [2] Global Caches ({}) ", cache_total), tab2_style),
-        Span::styled("  (Press Tab) ", Style::default().fg(Color::DarkGray)),
     ]);
     let tabs_widget = Paragraph::new(tabs_line)
         .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::DarkGray)));
     f.render_widget(tabs_widget, chunks[1]);
 
-    // Right: Selection and reclaim space
-    let (selected_count, selected_bytes) = app.get_selected_stats();
+    // Right: Space Stats & Selection
+    let (_, selected_bytes) = app.get_selected_stats();
     let current_total = app.get_total_bytes();
 
     let stats_line = Line::from(vec![
-        Span::styled(" Total: ", Style::default().fg(Color::DarkGray)),
+        Span::styled("Total: ", Style::default().fg(Color::DarkGray)),
         Span::styled(
             format_bytes(current_total),
             Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
@@ -80,10 +79,7 @@ pub fn render_header(f: &mut Frame, app: &App, area: Rect) {
             format_bytes(selected_bytes),
             Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
         ),
-        Span::styled(
-            format!(" ({} sel)", selected_count),
-            Style::default().fg(if selected_count > 0 { Color::Cyan } else { Color::DarkGray }),
-        ),
+        Span::raw(" "),
     ]);
     let stats_widget = Paragraph::new(stats_line)
         .alignment(Alignment::Right)

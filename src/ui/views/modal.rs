@@ -97,7 +97,7 @@ fn render_confirm_modal(f: &mut Frame, app: &App, area: Rect) {
 
         if dirty_count > 0 {
             lines.push(Line::from(vec![
-                Span::styled("  ⚠ ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+                Span::styled("  ⚠  ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
                 Span::styled(
                     format!("{} selected project(s) have uncommitted git changes!", dirty_count),
                     Style::default().fg(Color::Red),
@@ -107,7 +107,7 @@ fn render_confirm_modal(f: &mut Frame, app: &App, area: Rect) {
 
         if missing_lock_count > 0 {
             lines.push(Line::from(vec![
-                Span::styled("  ⚠ ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                Span::styled("  ⚠  ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
                 Span::styled(
                     format!("{} selected project(s) do not have a lockfile.", missing_lock_count),
                     Style::default().fg(Color::Yellow),
@@ -288,7 +288,7 @@ fn render_done_modal(f: &mut Frame, area: Rect, freed_bytes: u64, errors: usize,
         DeleteMode::Trash => vec![
             Line::from(""),
             Line::from(vec![
-                Span::styled("  ✔ ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                Span::styled("  ✓   ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
                 Span::styled(
                     "Moved to Recycle Bin!",
                     Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
@@ -305,7 +305,7 @@ fn render_done_modal(f: &mut Frame, area: Rect, freed_bytes: u64, errors: usize,
             ]),
             Line::from(""),
             Line::from(vec![
-                Span::styled("  ℹ Storage Note: ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                Span::styled("  ℹ   Storage Note: ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
                 Span::styled(
                     "Files are in your Recycle Bin and remain recoverable.",
                     Style::default().fg(Color::White),
@@ -319,7 +319,7 @@ fn render_done_modal(f: &mut Frame, area: Rect, freed_bytes: u64, errors: usize,
         DeleteMode::Permanent => vec![
             Line::from(""),
             Line::from(vec![
-                Span::styled("  ✔ ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                Span::styled("  ✓   ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
                 Span::styled(
                     "Cleanup Complete!",
                     Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
@@ -340,7 +340,7 @@ fn render_done_modal(f: &mut Frame, area: Rect, freed_bytes: u64, errors: usize,
     if errors > 0 {
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
-            format!("  ⚠ Encountered {} error(s) during deletion.", errors),
+            format!("  ⚠  Encountered {} error(s) during deletion.", errors),
             Style::default().fg(Color::Red),
         )));
     }

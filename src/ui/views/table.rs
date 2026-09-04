@@ -67,7 +67,7 @@ fn render_projects_table(f: &mut Frame, app: &mut App, area: Rect) {
                                 Span::styled(" [DEL]", Style::default().fg(Color::DarkGray))
                             }
                             GroupSelectionState::All => Span::styled(
-                                " [✔] ",
+                                " [✓] ",
                                 Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
                             ),
                             GroupSelectionState::Partial => Span::styled(
@@ -202,7 +202,7 @@ fn render_projects_table(f: &mut Frame, app: &mut App, area: Rect) {
                         } else {
                             match &act.git_status {
                                 crate::core::git::GitStatus::Clean => {
-                                    Span::styled("✔ Clean", Style::default().fg(Color::Green))
+                                    Span::styled("✓ Clean", Style::default().fg(Color::Green))
                                 }
                                 crate::core::git::GitStatus::Dirty(uncommitted) => Span::styled(
                                     format!("● {} dirty", uncommitted),
@@ -232,9 +232,9 @@ fn render_projects_table(f: &mut Frame, app: &mut App, area: Rect) {
 
                     // Lockfile status
                     let lockfile_span = if *all_locked {
-                        Span::styled("✔ Locked", Style::default().fg(Color::Green))
+                        Span::styled("✓ Locked", Style::default().fg(Color::Green))
                     } else {
-                        Span::styled("⚠ Missing", Style::default().fg(Color::Yellow))
+                        Span::styled("⚠  Missing", Style::default().fg(Color::Yellow))
                     };
 
                     let mut row = Row::new(vec![
@@ -281,7 +281,7 @@ fn render_projects_table(f: &mut Frame, app: &mut App, area: Rect) {
                         Span::styled("   [CLN]", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
                     } else if *is_selected {
                         Span::styled(
-                            "   [✔] ",
+                            "   [✓] ",
                             Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
                         )
                     } else {
@@ -345,9 +345,9 @@ fn render_projects_table(f: &mut Frame, app: &mut App, area: Rect) {
                     let git_span = Span::styled("─", Style::default().fg(Color::DarkGray));
 
                     let lockfile_span = if *has_lockfile {
-                        Span::styled("✔ Locked", Style::default().fg(Color::Green))
+                        Span::styled("✓ Locked", Style::default().fg(Color::Green))
                     } else {
-                        Span::styled("⚠ Missing", Style::default().fg(Color::Yellow))
+                        Span::styled("⚠  Missing", Style::default().fg(Color::Yellow))
                     };
 
                     let mut row = Row::new(vec![
@@ -380,7 +380,7 @@ fn render_projects_table(f: &mut Frame, app: &mut App, area: Rect) {
     let widths = [
         Constraint::Length(8),
         Constraint::Percentage(28),
-        Constraint::Length(7),
+        Constraint::Length(11),
         Constraint::Length(14),
         Constraint::Length(12),
         Constraint::Length(14),
@@ -440,7 +440,7 @@ fn render_global_cache_table(f: &mut Frame, app: &mut App, area: Rect) {
                 Span::styled(" [CLN]", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
             } else if cache.is_selected {
                 Span::styled(
-                    " [✔] ",
+                    " [✓] ",
                     Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
                 )
             } else {
@@ -535,7 +535,7 @@ fn render_global_cache_table(f: &mut Frame, app: &mut App, area: Rect) {
     let widths = [
         Constraint::Length(8),
         Constraint::Length(25),
-        Constraint::Length(7),
+        Constraint::Length(11),
         Constraint::Percentage(35),
         Constraint::Length(12),
         Constraint::Length(14),
@@ -544,7 +544,7 @@ fn render_global_cache_table(f: &mut Frame, app: &mut App, area: Rect) {
 
     let total_bytes: u64 = app.global_caches.iter().filter(|c| !c.is_deleted).map(|c| c.size_bytes).sum();
     let title = format!(
-        " Global Developer Tool Caches (Sort: {:?}) ({}) ─ Press [Tab] to switch to Workspace Projects ",
+        " Global Developer Tool Caches (Sort: {:?}) ({}) ",
         app.sort_mode,
         format_bytes(total_bytes)
     );
