@@ -144,21 +144,36 @@ impl PathPickerState {
             .iter()
             .find(|s| s.kind == crate::core::paths::PathKind::CurrentDir)
         {
+            let shortcut = if quick_pick_num <= 9 {
+                let ch = char::from_digit(quick_pick_num as u32, 10);
+                quick_pick_num += 1;
+                ch
+            } else {
+                None
+            };
+
             items.push(PathPickerItem {
                 label: cwd.label.clone(),
                 path_display: cwd.path.display().to_string(),
                 target: PathPickerTarget::Path(cwd.path.clone()),
-                shortcut: Some('1'),
+                shortcut,
             });
-            quick_pick_num = 2;
         }
 
         // 2. Custom Directory directly beneath Current Directory
+        let custom_shortcut = if quick_pick_num <= 9 {
+            let ch = char::from_digit(quick_pick_num as u32, 10);
+            quick_pick_num += 1;
+            ch
+        } else {
+            None
+        };
+
         items.push(PathPickerItem {
             label: "Custom Directory".to_string(),
             path_display: "Enter or paste any path...".to_string(),
             target: PathPickerTarget::CustomInput,
-            shortcut: Some('C'),
+            shortcut: custom_shortcut,
         });
 
         // 3. Dev folders and drives
@@ -183,11 +198,17 @@ impl PathPickerState {
         }
 
         // 4. Global Tool Caches
+        let global_shortcut = if quick_pick_num <= 9 {
+            char::from_digit(quick_pick_num as u32, 10)
+        } else {
+            None
+        };
+
         items.push(PathPickerItem {
             label: "Global Tool Caches".to_string(),
             path_display: "View central caches (Cargo, npm, Ollama...) without scanning folders".to_string(),
             target: PathPickerTarget::GlobalCaches,
-            shortcut: Some('G'),
+            shortcut: global_shortcut,
         });
 
         Self {

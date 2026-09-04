@@ -187,13 +187,24 @@ fn handle_path_picker_key(app: &mut App, code: KeyCode) {
                 }
             }
             KeyCode::Char('c') | KeyCode::Char('C') => {
-                if let Some(idx) = picker.items.iter().position(|it| it.shortcut == Some('C')) {
+                if let Some(idx) = picker
+                    .items
+                    .iter()
+                    .position(|it| matches!(it.target, crate::ui::app::PathPickerTarget::CustomInput))
+                {
                     picker.selected_index = idx;
                 }
                 picker.is_entering_custom = true;
                 picker.custom_error = None;
             }
             KeyCode::Char('g') | KeyCode::Char('G') => {
+                if let Some(idx) = picker
+                    .items
+                    .iter()
+                    .position(|it| matches!(it.target, crate::ui::app::PathPickerTarget::GlobalCaches))
+                {
+                    picker.selected_index = idx;
+                }
                 app.path_picker = None;
                 app.active_tab = crate::ui::app::ActiveTab::GlobalCaches;
             }
