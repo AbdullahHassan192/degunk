@@ -26,6 +26,8 @@ pub fn render_footer(f: &mut Frame, _app: &App, area: Rect) {
         Span::styled("Search  ", Style::default().fg(Color::DarkGray)),
         Span::styled("[d] ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
         Span::styled("Clean  ", Style::default().fg(Color::DarkGray)),
+        Span::styled("[p] ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::styled("Path  ", Style::default().fg(Color::DarkGray)),
         Span::styled("[r] ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
         Span::styled("Rescan  ", Style::default().fg(Color::DarkGray)),
         Span::styled("[q] ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),

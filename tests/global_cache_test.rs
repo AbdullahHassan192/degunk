@@ -79,7 +79,7 @@ fn test_global_cache_sorting_and_filtering() {
     use degunk::ui::app::{ActiveTab, App, SortMode};
     use std::path::PathBuf;
 
-    let mut app = App::new(vec![], None, false);
+    let mut app = App::new(vec![], None, false, true);
     app.active_tab = ActiveTab::GlobalCaches;
 
     app.global_caches = vec![
@@ -150,8 +150,16 @@ fn test_global_cache_sorting_and_filtering() {
     let visible = app.get_visible_global_caches();
     assert_eq!(visible.len(), 3);
 
-    // 5. Search query: "nonexistent"
-    app.search_query = "nonexistent".to_string();
-    let visible = app.get_visible_global_caches();
-    assert_eq!(visible.len(), 0);
+    // 5. Select all toggle
+    app.search_query = String::new();
+    app.toggle_all();
+    let (sel_count, sel_bytes) = app.get_selected_stats();
+    assert_eq!(sel_count, 3);
+    assert_eq!(sel_bytes, 650 * 1024 * 1024);
+
+    // 6. Deselect all toggle
+    app.toggle_all();
+    let (sel_count, sel_bytes) = app.get_selected_stats();
+    assert_eq!(sel_count, 0);
+    assert_eq!(sel_bytes, 0);
 }

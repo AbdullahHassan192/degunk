@@ -10,6 +10,7 @@ use crate::core::ecosystem::Ecosystem;
 use crate::core::global_cache::{
     detect_global_caches, start_global_cache_scan, GlobalCacheMessage, GlobalCacheTarget,
 };
+use crate::core::paths::detect_suggested_paths;
 use crate::core::scanner::{DiscoveredArtifact, ScanMessage, Scanner};
 use crate::core::size::parse_size_str;
 
@@ -101,10 +102,103 @@ pub enum TableItem {
     },
 }
 
+#[derive(Debug, Clone)]
+pub struct PathPickerItem {
+    pub label: String,
+    pub path_display: String,
+    pub target: PathPickerTarget,
+    pub shortcut: Option<char>,
+}
+
+#[derive(Debug, Clone)]
+pub enum PathPickerTarget {
+    Path(PathBuf),
+    CustomInput,
+    GlobalCaches,
+}
+
+#[derive(Debug, Clone)]
+pub struct PathPickerState {
+    pub items: Vec<PathPickerItem>,
+    pub selected_index: usize,
+    pub is_entering_custom: bool,
+    pub custom_input: String,
+    pub custom_error: Option<String>,
+}
+
+impl PathPickerState {
+    pub fn new() -> Self {
+        let suggested = detect_suggested_paths();
+        let mut items = Vec::new();
+        let mut quick_pick_num = 1;
+
+        // 1. Current working directory
+        if let Some(cwd) = suggested
+            .iter()
+            .find(|s| s.kind == crate::core::paths::PathKind::CurrentDir)
+        {
+            items.push(PathPickerItem {
+                label: cwd.label.clone(),
+                path_display: cwd.path.display().to_string(),
+                target: PathPickerTarget::Path(cwd.path.clone()),
+                shortcut: Some('1'),
+            });
+            quick_pick_num = 2;
+        }
+
+        // 2. Custom Directory directly beneath Current Directory
+        items.push(PathPickerItem {
+            label: "Custom Directory".to_string(),
+            path_display: "Enter or paste any path...".to_string(),
+            target: PathPickerTarget::CustomInput,
+            shortcut: Some('C'),
+        });
+
+        // 3. Dev folders and drives
+        for s in suggested
+            .iter()
+            .filter(|s| s.kind != crate::core::paths::PathKind::CurrentDir)
+        {
+            let shortcut = if quick_pick_num <= 9 {
+                let ch = char::from_digit(quick_pick_num as u32, 10);
+                quick_pick_num += 1;
+                ch
+            } else {
+                None
+            };
+
+            items.push(PathPickerItem {
+                label: s.label.clone(),
+                path_display: s.path.display().to_string(),
+                target: PathPickerTarget::Path(s.path.clone()),
+                shortcut,
+            });
+        }
+
+        // 4. Global Tool Caches
+        items.push(PathPickerItem {
+            label: "Global Tool Caches".to_string(),
+            path_display: "View central caches (Cargo, npm, Ollama...) without scanning folders".to_string(),
+            target: PathPickerTarget::GlobalCaches,
+            shortcut: Some('G'),
+        });
+
+        Self {
+            items,
+            selected_index: 0,
+            is_entering_custom: false,
+            custom_input: String::new(),
+            custom_error: None,
+        }
+    }
+}
+
 pub struct App {
     pub roots: Vec<PathBuf>,
     pub allowed_ecosystems: Option<HashSet<Ecosystem>>,
     pub include_cloud: bool,
+    pub has_scanned: bool,
+    pub path_picker: Option<PathPickerState>,
     pub artifacts: Vec<DiscoveredArtifact>,
     pub selected_table_index: usize,
     pub is_scanning: bool,
@@ -134,11 +228,20 @@ impl App {
         roots: Vec<PathBuf>,
         allowed_ecosystems: Option<HashSet<Ecosystem>>,
         include_cloud: bool,
+        has_explicit_paths: bool,
     ) -> Self {
+        let path_picker = if has_explicit_paths {
+            None
+        } else {
+            Some(PathPickerState::new())
+        };
+
         let mut app = Self {
             roots,
             allowed_ecosystems,
             include_cloud,
+            has_scanned: has_explicit_paths,
+            path_picker,
             artifacts: Vec::new(),
             selected_table_index: 0,
             is_scanning: false,
@@ -160,15 +263,42 @@ impl App {
             global_cache_rx: None,
             deletion_rx: None,
         };
-        app.start_scan();
+
+        app.start_global_cache_scan();
+
+        if has_explicit_paths {
+            app.start_scan();
+        }
+
         app
+    }
+
+    pub fn start_global_cache_scan(&mut self) {
+        if let Some(ref cancel) = self.global_cache_cancel {
+            cancel.store(true, Ordering::Relaxed);
+        }
+        self.global_caches = detect_global_caches();
+        let (gc_tx, gc_rx) = crossbeam_channel::unbounded();
+        let gc_cancel = Arc::new(AtomicBool::new(false));
+        self.global_cache_cancel = Some(gc_cancel.clone());
+        self.global_cache_rx = Some(gc_rx);
+        start_global_cache_scan(self.global_caches.clone(), gc_tx, gc_cancel);
+    }
+
+    pub fn open_path_picker(&mut self) {
+        self.path_picker = Some(PathPickerState::new());
+    }
+
+    pub fn select_path(&mut self, path: PathBuf) {
+        self.roots = vec![path];
+        self.path_picker = None;
+        self.active_tab = ActiveTab::Projects;
+        self.has_scanned = true;
+        self.start_scan();
     }
 
     pub fn start_scan(&mut self) {
         if let Some(ref cancel) = self.scanner_cancel {
-            cancel.store(true, Ordering::Relaxed);
-        }
-        if let Some(ref cancel) = self.global_cache_cancel {
             cancel.store(true, Ordering::Relaxed);
         }
 
@@ -176,6 +306,7 @@ impl App {
         self.selected_table_index = 0;
         self.is_scanning = true;
         self.scanned_dirs_count = 0;
+        self.has_scanned = true;
 
         let (tx, rx) = crossbeam_channel::unbounded();
         let scanner = Scanner::new();
@@ -183,14 +314,6 @@ impl App {
 
         self.scanner_cancel = Some(cancel.clone());
         self.rx = Some(rx);
-
-        // Scan global tool caches in background
-        self.global_caches = detect_global_caches();
-        let (gc_tx, gc_rx) = crossbeam_channel::unbounded();
-        let gc_cancel = Arc::new(AtomicBool::new(false));
-        self.global_cache_cancel = Some(gc_cancel.clone());
-        self.global_cache_rx = Some(gc_rx);
-        start_global_cache_scan(self.global_caches.clone(), gc_tx, gc_cancel);
 
         Scanner::start_scan(
             self.roots.clone(),

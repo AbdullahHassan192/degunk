@@ -1,0 +1,250 @@
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PathKind {
+    CurrentDir,
+    ProjectDir,
+    Drive,
+}
+
+#[derive(Debug, Clone)]
+pub struct SuggestedPath {
+    pub label: String,
+    pub path: PathBuf,
+    pub kind: PathKind,
+}
+
+/// Normalizes a path string for deduplication without Windows \\?\ UNC prefix.
+fn path_dedup_key(path: &Path) -> String {
+    let s = path.to_string_lossy();
+    let trimmed = if s.starts_with(r"\\?\") {
+        &s[4..]
+    } else {
+        &s
+    };
+    #[cfg(target_os = "windows")]
+    {
+        trimmed.to_lowercase().replace('/', "\\")
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        trimmed.to_string()
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn detect_system_drives() -> Vec<PathBuf> {
+    let mut drives = Vec::new();
+    for letter in b'C'..=b'Z' {
+        let drive_str = format!("{}:\\", letter as char);
+        let path = PathBuf::from(&drive_str);
+        if path.is_dir() {
+            drives.push(path);
+        }
+    }
+    drives
+}
+
+#[cfg(not(target_os = "windows"))]
+fn detect_system_drives() -> Vec<PathBuf> {
+    let mut drives = Vec::new();
+    let root = PathBuf::from("/");
+    if root.is_dir() {
+        drives.push(root);
+    }
+    drives
+}
+
+/// Filters out parent directories if a more specific child directory candidate exists.
+pub fn filter_parent_directories(candidates: Vec<(String, PathBuf)>) -> Vec<(String, PathBuf)> {
+    let mut filtered = Vec::new();
+    for (label, path) in &candidates {
+        let is_parent_of_other = candidates.iter().any(|(_, other_path)| {
+            other_path != path && other_path.starts_with(path)
+        });
+        if !is_parent_of_other {
+            filtered.push((label.clone(), path.clone()));
+        }
+    }
+    filtered
+}
+
+/// Detects sensible default scan locations: current directory, common dev folders, and system drives.
+pub fn detect_suggested_paths() -> Vec<SuggestedPath> {
+    let mut suggestions = Vec::new();
+    let mut seen = HashSet::new();
+
+    // 1. Current working directory
+    if let Ok(cwd) = std::env::current_dir() {
+        let key = path_dedup_key(&cwd);
+        seen.insert(key);
+        suggestions.push(SuggestedPath {
+            label: "Current Directory".to_string(),
+            path: cwd,
+            kind: PathKind::CurrentDir,
+        });
+    }
+
+    // 2. Common project directories in home folder
+    let mut dev_candidates = Vec::new();
+
+    if let Some(home) = dirs::home_dir() {
+        let candidates = [
+            ("Projects", home.join("Projects")),
+            ("Projects", home.join("projects")),
+            ("Dev", home.join("Dev")),
+            ("Dev", home.join("dev")),
+            ("Code", home.join("Code")),
+            ("Code", home.join("code")),
+            ("Source Repos", home.join("source").join("repos")),
+            ("Source", home.join("source")),
+            ("Workspace", home.join("Workspace")),
+            ("Workspace", home.join("workspace")),
+            ("Desktop", home.join("Desktop")),
+            ("Documents", home.join("Documents")),
+        ];
+
+        for (label, path) in candidates {
+            if path.is_dir() {
+                dev_candidates.push((label.to_string(), path));
+            }
+        }
+    }
+
+    // 3. Common project roots on system drives
+    let drives = detect_system_drives();
+    for drive in &drives {
+        let drive_name = drive.display().to_string();
+        let drive_trimmed = drive_name.trim_end_matches('\\').trim_end_matches('/');
+        let root_candidates = [
+            (format!("Projects ({})", drive_trimmed), drive.join("Projects")),
+            (format!("Projects ({})", drive_trimmed), drive.join("projects")),
+            (format!("Dev ({})", drive_trimmed), drive.join("Dev")),
+            (format!("Dev ({})", drive_trimmed), drive.join("dev")),
+            (format!("Code ({})", drive_trimmed), drive.join("Code")),
+            (format!("Code ({})", drive_trimmed), drive.join("code")),
+            (format!("Workspace ({})", drive_trimmed), drive.join("workspace")),
+        ];
+        for (label, path) in root_candidates {
+            if path.is_dir() {
+                dev_candidates.push((label, path));
+            }
+        }
+    }
+
+    // Deduplicate parent-child dev folders: prefer specific subfolders (e.g. ~/source/repos over ~/source)
+    let filtered_dev = filter_parent_directories(dev_candidates);
+
+    for (label, path) in filtered_dev {
+        let key = path_dedup_key(&path);
+        if seen.insert(key) {
+            suggestions.push(SuggestedPath {
+                label,
+                path,
+                kind: PathKind::ProjectDir,
+            });
+        }
+    }
+
+    // 4. System drives / Root partitions
+    for drive in drives {
+        let key = path_dedup_key(&drive);
+        if seen.insert(key) {
+            let label = format!("Drive ({})", drive.display());
+            suggestions.push(SuggestedPath {
+                label,
+                path: drive,
+                kind: PathKind::Drive,
+            });
+        }
+    }
+
+    suggestions
+}
+
+/// Resolves and validates a user-entered path string.
+/// Handles tildes (~), surrounding quotes, and relative paths.
+pub fn resolve_user_path(input: &str) -> Option<PathBuf> {
+    let trimmed = input.trim().trim_matches('"').trim_matches('\'').trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let expanded = if trimmed.starts_with("~/") || trimmed.starts_with("~\\") || trimmed == "~" {
+        if let Some(home) = dirs::home_dir() {
+            if trimmed == "~" {
+                home
+            } else {
+                home.join(&trimmed[2..])
+            }
+        } else {
+            PathBuf::from(trimmed)
+        }
+    } else {
+        PathBuf::from(trimmed)
+    };
+
+    let full_path = if expanded.is_relative() {
+        if let Ok(cwd) = std::env::current_dir() {
+            cwd.join(expanded)
+        } else {
+            expanded
+        }
+    } else {
+        expanded
+    };
+
+    if full_path.is_dir() {
+        Some(full_path)
+    } else {
+        None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_detect_suggested_paths_not_empty() {
+        let paths = detect_suggested_paths();
+        assert!(!paths.is_empty());
+        assert_eq!(paths[0].kind, PathKind::CurrentDir);
+    }
+
+    #[test]
+    fn test_parent_child_filtering() {
+        let list = vec![
+            ("Source".to_string(), PathBuf::from("/user/source")),
+            ("Source Repos".to_string(), PathBuf::from("/user/source/repos")),
+            ("Desktop".to_string(), PathBuf::from("/user/Desktop")),
+        ];
+        let filtered = filter_parent_directories(list);
+        assert_eq!(filtered.len(), 2);
+        assert!(filtered.iter().any(|(l, _)| l == "Source Repos"));
+        assert!(filtered.iter().any(|(l, _)| l == "Desktop"));
+        assert!(!filtered.iter().any(|(l, _)| l == "Source"));
+    }
+
+    #[test]
+    fn test_resolve_user_path_valid() {
+        let cwd = std::env::current_dir().unwrap();
+        let res = resolve_user_path(".");
+        assert_eq!(res, Some(cwd));
+    }
+
+    #[test]
+    fn test_resolve_user_path_quoted() {
+        let cwd = std::env::current_dir().unwrap();
+        let quoted = format!("\"{}\"", cwd.display());
+        let res = resolve_user_path(&quoted);
+        assert_eq!(res, Some(cwd));
+    }
+
+    #[test]
+    fn test_resolve_user_path_nonexistent() {
+        let res = resolve_user_path("non_existent_folder_xyz_12345");
+        assert_eq!(res, None);
+    }
+}

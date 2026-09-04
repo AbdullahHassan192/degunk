@@ -49,7 +49,7 @@ fn test_project_tree_grouping_and_collapsing() {
     assert_eq!(found.len(), 5);
 
     // Initialize App with found artifacts
-    let mut app = App::new(vec![base.clone()], None, false);
+    let mut app = App::new(vec![base.clone()], None, false, true);
     app.artifacts = found;
 
     // By default, groups should be expanded

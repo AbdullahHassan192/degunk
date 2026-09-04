@@ -1,143 +1,130 @@
 # degunk
 
-<div align="center">
-  <h3>⚡ Blazing-fast disk cleaner & developer artifact scavenger for multi-stack codebases</h3>
-  <p>Reclaim hundreds of gigabytes occupied by abandoned dependencies, build artifacts, test runs, and bloated global tool caches.</p>
-</div>
+Developers lose tens of gigabytes of disk space to old `node_modules`, `venv`, `target`, and build caches in projects they haven't touched in months. `degunk` finds those discarded folders, shows you how long it's been since you committed to each repo, and lets you reclaim disk space safely.
 
 ---
 
-## Highlights
+## Features
 
-* **Project Tree Hierarchy**: Multi-artifact projects (such as monorepos, fullstack apps, and mobile projects) group naturally under their root directory with expand/collapse (`Enter`/`e`/`E`).
-* **Broad Stack Support**: Discovers artifacts across Node.js, Python, Rust, Java/Kotlin, Go, .NET, C/C++, Swift/iOS, Flutter/Dart, PHP, Elixir, Zig, Godot, Unity, Ruby, Scala, Haskell, OCaml, Terraform/IaC, and Coverage/Testing.
-* **Global Developer Caches**: Dedicated tab (`Tab`) scans machine-level caches for Cargo, npm, pnpm, Yarn, pip, uv, Gradle daemons, Maven, Go, Pub, Bun, Ollama weights, LM Studio models, HuggingFace, PyTorch, Android, Xcode DerivedData, CocoaPods, Coursier, Ruby gems, Haskell Stack, Terraform plugin cache, JetBrains, VS Code, and Cursor.
-* **Git Activity Tracking**: Automatic inspection of local Git history shows days since last commit and whether the working copy has uncommitted changes.
-* **Smart Search Filtering**: Fast multi-field fuzzy search with structured filter tokens (`eco:rust`, `size:>100m`, `locked:yes`, `git:clean`).
-* **Safe Deletion**: Recycle Bin / Trash support by default with read-only file permission handling on Windows, macOS, and Linux.
-
----
-
-## Supported Ecosystems & Targets
-
-| Ecosystem | Target Folders | Required Manifests | Lockfiles | Reinstall Command |
-| :--- | :--- | :--- | :--- | :--- |
-| **Node.js / Web** | `node_modules`, `.next`, `.nuxt`, `.turbo`, `.svelte-kit`, `.angular`, `.astro`, `.parcel-cache`, `.vite`, `.docusaurus`, `storybook-static` | `package.json`, `next.config.*`, `nuxt.config.*`, `angular.json`, `astro.config.*`, etc. | `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `bun.lockb` | `npm install` / `pnpm install` / `bun install` |
-| **Python** | `.venv`, `venv`, `env`, `__pycache__`, `.pytest_cache`, `.mypy_cache`, `dist`, `build`, `*.egg-info`, `.tox`, `.nox`, `.pixi`, `.ipynb_checkpoints` | `pyproject.toml`, `requirements.txt`, `Pipfile`, `setup.py`, `pixi.toml` | `poetry.lock`, `Pipfile.lock`, `pdm.lock`, `uv.lock`, `pixi.lock` | `pip install -r requirements.txt` / `uv sync` |
-| **Rust** | `target` | `Cargo.toml` | `Cargo.lock` | `cargo build` |
-| **Java / Kotlin** | `build`, `.gradle`, `target` | `build.gradle`, `build.gradle.kts`, `pom.xml`, `gradlew` | `gradle.lockfile` | `./gradlew build` / `mvn clean install` |
-| **Ruby** | `.bundle`, `vendor` | `Gemfile` | `Gemfile.lock` | `bundle install` |
-| **Scala** | `target`, `.bloop`, `.metals` | `build.sbt` | N/A | `sbt compile` |
-| **Haskell** | `.stack-work`, `dist-newstyle` | `stack.yaml`, `*.cabal`, `cabal.project` | N/A | `stack build` / `cabal build` |
-| **OCaml** | `_build` | `dune-project`, `dune` | `dune.lock` | `dune build` |
-| **Terraform / IaC** | `.terraform`, `.serverless`, `.aws-sam` | `*.tf`, `*.tofu`, `terragrunt.hcl`, `serverless.yml` | `.terraform.lock.hcl` | `terraform init` / `tofu init` |
-| **Coverage & Tests** | `coverage`, `.nyc_output`, `htmlcov`, `test-results`, `playwright-report`, `.playwright` | Project files | N/A | Re-run test suite |
-| **Go** | `vendor` | `go.mod` | `go.sum` | `go mod vendor` |
-| **.NET / C#** | `bin`, `obj` | `*.csproj`, `*.fsproj`, `*.sln` | `packages.lock.json` | `dotnet build` |
-| **C / C++** | `build`, `CMakeFiles`, `.vs` | `CMakeLists.txt`, `Makefile`, `*.sln`, `*.vcxproj` | N/A | `cmake -B build` |
-| **iOS / Swift** | `.build`, `DerivedData`, `Pods` | `Package.swift`, `Podfile`, `*.xcodeproj` | `Package.resolved`, `Podfile.lock` | `swift build` / `pod install` |
-| **Flutter / Dart** | `.dart_tool`, `build` | `pubspec.yaml` | `pubspec.lock` | `flutter pub get` |
-| **PHP** | `vendor` | `composer.json` | `composer.lock` | `composer install` |
-| **Elixir** | `_build`, `deps` | `mix.exs` | `mix.lock` | `mix deps.get` |
-| **Zig** | `zig-cache`, `zig-out`, `.zig-cache` | `build.zig` | `build.zig.zon` | `zig build` |
-| **Godot** | `.godot`, `.import` | `project.godot` | N/A | Re-open in Godot |
-| **Unity** | `Library`, `Temp`, `Obj`, `Build`, `Builds`, `Logs`, `MemoryCaptures` | `ProjectSettings/ProjectVersion.txt` | N/A | Re-open in Unity Editor |
+* **Interactive path launcher**: Running `degunk` opens a path picker with your common dev folders (`~/Projects`, `~/dev`), drives, and a custom path input with paste support.
+* **Project tree view**: Monorepos, mobile apps, and fullstack projects group multiple build targets under their project root. You can collapse and expand groups with `Enter` or `e`.
+* **Deep ecosystem coverage**: Scans 20+ stacks including Node.js, Python, Rust, Go, Java/Kotlin, .NET, C/C++, Swift/iOS, Flutter, Zig, Godot, Unity, Ruby, Scala, Haskell, OCaml, and Terraform.
+* **Global developer caches**: Press `Tab` to see central caches like Cargo package checkouts, npm, pnpm, pip, Gradle daemons, Go build caches, and local AI model weights (Ollama, LM Studio, HuggingFace).
+* **Git activity context**: Inspects each project's Git history to display days since your last commit, uncommitted local changes, and unpushed commits before you delete anything.
+* **Search filters**: Filter by ecosystem, size, or safety state using tokens like `eco:node`, `size:>500m`, `git:clean`, or `locked:yes`.
+* **Safe deletion**: Moves files to your OS Trash or Recycle Bin by default, with an option for direct deletion. Handles read-only file locks on Windows and Unix cleanly.
 
 ---
 
-## Global Developer Caches Tab
+## Quick start
 
-Switch to the **Global Caches** tab with `Tab` to inspect and clean central caches:
-* **Package Managers**: Cargo registry & git checkouts, npm, pnpm, Yarn, pip, uv, Bun, Pub, NuGet, Ruby gems, Coursier.
-* **Build Systems & Compilers**: Go build cache, Android exploded AAR cache, Gradle cache & daemon logs, Haskell Stack indices & snapshots, Xcode DerivedData, CocoaPods, Terraform plugin cache.
-* **AI & LLM Weights**: Ollama local models (`.ollama/models`), LM Studio models, HuggingFace Hub, PyTorch Hub, OpenAI Whisper weights.
-* **IDE Indexes & State**: JetBrains system caches, VS Code workspace storage, Cursor workspace storage.
+### Launch the TUI
 
----
-
-## TUI Keybindings
-
-| Key | Action |
-| :--- | :--- |
-| `↑` / `k` | Move selection up |
-| `↓` / `j` | Move selection down |
-| `Space` | Toggle selection (on a project group, selects or deselects all child artifacts) |
-| `Tab` | Switch between **Project Artifacts** and **Global Caches** tabs |
-| `Enter` / `e` | Expand / collapse highlighted project group |
-| `→` / `l` | Expand highlighted project group |
-| `←` / `h` | Collapse highlighted project group (or jump from child to parent header) |
-| `E` | Toggle Expand All / Collapse All |
-| `a` | Toggle select all / deselect all |
-| `s` | Cycle sort mode (`Size ↓`, `Inactivity Age ↓`, `Name A-Z`, `Ecosystem A-Z`) |
-| `/` | Open search and filter input bar |
-| `d` | Open deletion confirmation modal |
-| `r` | Rescan directory roots and global caches |
-| `q` / `Ctrl+C` | Quit |
-
-### Search Filtering Syntax
-
-When typing in the search bar (`/`), matches apply across project names, paths, folder names, labels, and ecosystems. You can also use filter tokens:
-* `eco:ruby`, `eco:tf`, `eco:node`, `eco:python`, `eco:rust` (filter by ecosystem)
-* `size:>100m`, `size:>1g`, `size:<500k` (filter by size threshold)
-* `locked:yes`, `locked:no` (filter by lockfile presence)
-* `git:clean`, `git:dirty` (filter by repository working directory status)
-
-Combine tokens freely, for example: `eco:python size:>50m git:clean`.
-
-### Deletion Modal Controls
-
-* `t` / `T` : Move selected items to **Trash / Recycle Bin** (safest)
-* `p` / `P` : **Permanently Delete** selected items
-* `Esc` / `c` : Cancel and return to main view
-
----
-
-## CLI Usage
-
-### Launch Interactive TUI
-```powershell
-# Scan current directory
+```bash
+# Open the interactive path picker
 degunk
 
-# Scan specific directories
-degunk D:\projects C:\Users\YourName\dev
+# Scan the current directory immediately
+degunk .
+
+# Scan specific project folders or drives
+degunk D:\projects ~/code
 ```
 
-### Non-Interactive Scan
-```powershell
-# Print table of found artifacts
+### CLI and scripting
+
+```bash
+# Print a summary table without launching the full TUI
 degunk --scan .
 
-# Output formatted JSON for automation
+# Output machine-readable JSON
 degunk --scan . --json
 
 # Filter by ecosystem
-degunk --scan . --types ruby,scala,terraform,node
+degunk --scan . --types node,rust,python
 
-# Only show targets inactive for more than 60 days
+# Only show targets untouched for over 60 days
 degunk --scan . --older-than 60
-```
 
-### Automated Cleaning
-```powershell
-# Preview what would be cleaned without touching disk
-degunk --clean-all --dry-run .
-
-# Clean all artifacts older than 90 days, moving them to Trash
+# Clean old artifacts into the Trash without manual confirmation
 degunk --clean-all --trash --older-than 90 .
-
-# Permanently delete all Rust target directories
-degunk --clean-all --permanent --types rust .
 ```
 
 ---
 
-## Development & Testing
+## Keyboard shortcuts
 
-```powershell
+| Key | Action |
+| :--- | :--- |
+| `↑` / `k`, `↓` / `j` | Move selection up or down |
+| `Space` | Select or deselect item (selecting a project selects all its build targets) |
+| `Enter` / `e` | Expand or collapse project folder |
+| `E` | Expand all or collapse all project groups |
+| `Tab` | Switch between **Projects** and **Global Caches** views |
+| `s` | Cycle sort order (Size, Inactivity age, Name, Ecosystem) |
+| `/` | Search projects and filter by token |
+| `p` | Open the path picker to scan a different drive or directory |
+| `d` | Open deletion confirmation modal |
+| `r` | Rescan current paths and global caches |
+| `q` / `Ctrl+C` | Quit |
+
+### Search syntax
+
+Type `/` to search names, folder names, and paths. You can also mix in filter tokens:
+
+* `eco:rust`, `eco:node`, `eco:python`
+* `size:>100m`, `size:>1g`, `size:<50m`
+* `locked:yes`, `locked:no`
+* `git:clean`, `git:dirty`
+
+Example: `/eco:python size:>100m git:clean`
+
+---
+
+## Supported ecosystems and targets
+
+| Ecosystem | Target folders | Key markers | Lockfile |
+| :--- | :--- | :--- | :--- |
+| **Node.js / Web** | `node_modules`, `.next`, `.nuxt`, `.turbo`, `.svelte-kit`, `.angular`, `.astro`, `.parcel-cache`, `.vite`, `.docusaurus`, `storybook-static` | `package.json`, `next.config.*`, etc. | `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `bun.lockb` |
+| **Python** | `.venv`, `venv`, `env`, `__pycache__`, `.pytest_cache`, `.mypy_cache`, `dist`, `build`, `*.egg-info`, `.tox`, `.nox`, `.pixi` | `pyproject.toml`, `requirements.txt`, `Pipfile`, `setup.py` | `poetry.lock`, `Pipfile.lock`, `uv.lock`, `pdm.lock` |
+| **Rust** | `target` | `Cargo.toml` | `Cargo.lock` |
+| **Java / Kotlin** | `build`, `.gradle`, `target` | `build.gradle`, `build.gradle.kts`, `pom.xml` | `gradle.lockfile` |
+| **Go** | `vendor` | `go.mod` | `go.sum` |
+| **.NET / C#** | `bin`, `obj` | `*.csproj`, `*.fsproj`, `*.sln` | `packages.lock.json` |
+| **C / C++** | `build`, `CMakeFiles`, `.vs` | `CMakeLists.txt`, `Makefile`, `*.sln` | N/A |
+| **iOS / Swift** | `.build`, `DerivedData`, `Pods` | `Package.swift`, `Podfile`, `*.xcodeproj` | `Package.resolved`, `Podfile.lock` |
+| **Flutter / Dart** | `.dart_tool`, `build` | `pubspec.yaml` | `pubspec.lock` |
+| **PHP** | `vendor` | `composer.json` | `composer.lock` |
+| **Elixir** | `_build`, `deps` | `mix.exs` | `mix.lock` |
+| **Zig** | `zig-cache`, `zig-out`, `.zig-cache` | `build.zig` | `build.zig.zon` |
+| **Godot** | `.godot`, `.import` | `project.godot` | N/A |
+| **Unity** | `Library`, `Temp`, `Obj`, `Build`, `Builds`, `Logs` | `ProjectSettings/ProjectVersion.txt` | N/A |
+| **Ruby** | `.bundle`, `vendor` | `Gemfile` | `Gemfile.lock` |
+| **Scala** | `target`, `.bloop`, `.metals` | `build.sbt` | N/A |
+| **Haskell** | `.stack-work`, `dist-newstyle` | `stack.yaml`, `*.cabal` | N/A |
+| **OCaml** | `_build` | `dune-project`, `dune` | `dune.lock` |
+| **Terraform / IaC** | `.terraform`, `.serverless`, `.aws-sam` | `*.tf`, `*.tofu`, `serverless.yml` | `.terraform.lock.hcl` |
+| **Coverage & Tests** | `coverage`, `.nyc_output`, `htmlcov`, `test-results`, `playwright-report` | Project test runners | N/A |
+
+---
+
+## Global tool caches
+
+Press `Tab` in the TUI to inspect central tool caches that live outside your project folders:
+
+* **Package managers**: Cargo checkouts and git registries, npm, pnpm, Yarn, pip, uv, Bun, Pub, NuGet, Ruby gems, Coursier.
+* **Compilers and build systems**: Go build cache, Gradle daemon logs and caches, Android build artifacts, Xcode DerivedData, CocoaPods, Terraform plugins.
+* **AI model weights**: Ollama models (`~/.ollama/models`), LM Studio, HuggingFace Hub, PyTorch Hub cache, Whisper weights.
+* **Editor caches**: JetBrains system caches, VS Code workspace storage, Cursor workspace storage.
+
+---
+
+## Development
+
+```bash
 # Check compiler diagnostics
 cargo check
 
-# Run all unit and integration tests
+# Run test suite
 cargo test
 ```

@@ -91,12 +91,18 @@ fn event_loop(
             render_modal(f, app);
         })?;
 
-        // Poll keyboard events
+        // Poll events
         if event::poll(Duration::from_millis(50))? {
-            if let Event::Key(key) = event::read()? {
-                if key.kind == KeyEventKind::Press {
-                    handle_key(app, key.code, key.modifiers);
+            match event::read()? {
+                Event::Key(key) => {
+                    if key.kind == KeyEventKind::Press {
+                        handle_key(app, key.code, key.modifiers);
+                    }
                 }
+                Event::Paste(text) => {
+                    handle_paste(app, &text);
+                }
+                _ => {}
             }
         }
     }
@@ -104,10 +110,129 @@ fn event_loop(
     Ok(())
 }
 
+fn handle_paste(app: &mut App, text: &str) {
+    if let Some(ref mut picker) = app.path_picker {
+        if picker.is_entering_custom {
+            picker.custom_input.push_str(text);
+            picker.custom_error = None;
+        }
+    } else if app.is_searching {
+        app.search_query.push_str(text);
+    }
+}
+
+fn handle_path_picker_key(app: &mut App, code: KeyCode) {
+    if let Some(ref mut picker) = app.path_picker {
+        if picker.is_entering_custom {
+            match code {
+                KeyCode::Enter => {
+                    let input = picker.custom_input.clone();
+                    if let Some(resolved) = crate::core::paths::resolve_user_path(&input) {
+                        app.select_path(resolved);
+                    } else if let Some(p) = app.path_picker.as_mut() {
+                        p.custom_error =
+                            Some("Directory does not exist or is inaccessible".to_string());
+                    }
+                }
+                KeyCode::Esc => {
+                    picker.is_entering_custom = false;
+                    picker.custom_error = None;
+                }
+                KeyCode::Backspace => {
+                    picker.custom_input.pop();
+                    picker.custom_error = None;
+                }
+                KeyCode::Char(c) => {
+                    picker.custom_input.push(c);
+                    picker.custom_error = None;
+                }
+                _ => {}
+            }
+            return;
+        }
+
+        match code {
+            KeyCode::Up | KeyCode::Char('k') => {
+                if picker.selected_index > 0 {
+                    picker.selected_index -= 1;
+                } else {
+                    picker.selected_index = picker.items.len().saturating_sub(1);
+                }
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                if picker.selected_index + 1 < picker.items.len() {
+                    picker.selected_index += 1;
+                } else {
+                    picker.selected_index = 0;
+                }
+            }
+            KeyCode::Char(c @ '1'..='9') => {
+                if let Some(idx) = picker.items.iter().position(|it| it.shortcut == Some(c)) {
+                    picker.selected_index = idx;
+                    handle_picker_select(app);
+                }
+            }
+            KeyCode::Char('c') | KeyCode::Char('C') => {
+                if let Some(idx) = picker.items.iter().position(|it| it.shortcut == Some('C')) {
+                    picker.selected_index = idx;
+                }
+                picker.is_entering_custom = true;
+                picker.custom_error = None;
+            }
+            KeyCode::Char('g') | KeyCode::Char('G') => {
+                app.path_picker = None;
+                app.active_tab = crate::ui::app::ActiveTab::GlobalCaches;
+            }
+            KeyCode::Enter | KeyCode::Char(' ') => {
+                handle_picker_select(app);
+            }
+            KeyCode::Esc => {
+                if app.has_scanned {
+                    app.path_picker = None;
+                } else {
+                    app.should_quit = true;
+                }
+            }
+            KeyCode::Char('q') => {
+                app.should_quit = true;
+            }
+            _ => {}
+        }
+    }
+}
+
+fn handle_picker_select(app: &mut App) {
+    if let Some(ref picker) = app.path_picker {
+        if let Some(item) = picker.items.get(picker.selected_index) {
+            match &item.target {
+                crate::ui::app::PathPickerTarget::Path(p) => {
+                    let path = p.clone();
+                    app.select_path(path);
+                }
+                crate::ui::app::PathPickerTarget::CustomInput => {
+                    if let Some(p) = app.path_picker.as_mut() {
+                        p.is_entering_custom = true;
+                        p.custom_error = None;
+                    }
+                }
+                crate::ui::app::PathPickerTarget::GlobalCaches => {
+                    app.path_picker = None;
+                    app.active_tab = crate::ui::app::ActiveTab::GlobalCaches;
+                }
+            }
+        }
+    }
+}
+
 fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
     // Check for Ctrl+C
     if modifiers.contains(KeyModifiers::CONTROL) && code == KeyCode::Char('c') {
         app.should_quit = true;
+        return;
+    }
+
+    if app.path_picker.is_some() {
+        handle_path_picker_key(app, code);
         return;
     }
 
@@ -199,8 +324,12 @@ fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
                     KeyCode::Char('/') => {
                         app.is_searching = true;
                     }
+                    KeyCode::Char('p') => {
+                        app.open_path_picker();
+                    }
                     KeyCode::Char('r') => {
                         app.start_scan();
+                        app.start_global_cache_scan();
                     }
                     KeyCode::Char('d') => {
                         let (selected_count, _) = app.get_selected_stats();

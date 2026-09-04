@@ -9,9 +9,14 @@ use ratatui::{
 use crate::core::deleter::DeleteMode;
 use crate::core::git::GitStatus;
 use crate::core::size::format_bytes;
-use crate::ui::app::{App, DeletionState};
+use crate::ui::app::{App, DeletionState, PathPickerState, PathPickerTarget};
 
 pub fn render_modal(f: &mut Frame, app: &App) {
+    if let Some(ref picker) = app.path_picker {
+        render_path_picker_modal(f, app, picker);
+        return;
+    }
+
     if app.deletion_state == DeletionState::Idle {
         return;
     }
@@ -358,6 +363,202 @@ fn render_done_modal(f: &mut Frame, area: Rect, freed_bytes: u64, errors: usize,
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Green))
         .title(Span::styled(" Done ", Style::default().fg(Color::Green)));
+
+    let paragraph = Paragraph::new(lines).block(block);
+    f.render_widget(paragraph, area);
+}
+
+fn render_path_picker_modal(f: &mut Frame, app: &App, picker: &PathPickerState) {
+    let area = centered_rect(74, 65, f.area());
+    f.render_widget(Clear, area);
+
+    if picker.is_entering_custom {
+        render_custom_path_input(f, app, picker, area);
+    } else {
+        render_picker_list(f, app, picker, area);
+    }
+}
+
+fn render_picker_list(f: &mut Frame, app: &App, picker: &PathPickerState, area: Rect) {
+    let mut lines = Vec::new();
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "  Select a location to scan for developer dependencies and build caches:",
+        Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+    )));
+    lines.push(Line::from(Span::styled(
+        "  ───────────────────────────────────────────────────────────────────",
+        Style::default().fg(Color::DarkGray),
+    )));
+
+    let inner_height = area.height.saturating_sub(7) as usize;
+    let total_items = picker.items.len();
+    let scroll_offset = if total_items > inner_height && picker.selected_index >= inner_height {
+        picker.selected_index - inner_height + 1
+    } else {
+        0
+    };
+
+    let max_label_len = picker
+        .items
+        .iter()
+        .map(|it| it.label.len())
+        .max()
+        .unwrap_or(18)
+        .max(18);
+
+    for (idx, item) in picker.items.iter().enumerate().skip(scroll_offset).take(inner_height) {
+        let is_selected = idx == picker.selected_index;
+
+        let prefix = if is_selected {
+            Span::styled("  ▸ ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+        } else {
+            Span::raw("    ")
+        };
+
+        let key_badge = match item.shortcut {
+            Some(ch) => {
+                let color = if ch == 'C' || ch == 'G' {
+                    Color::LightCyan
+                } else {
+                    Color::Cyan
+                };
+                Span::styled(format!("[{}] ", ch), Style::default().fg(color).add_modifier(Modifier::BOLD))
+            }
+            None => Span::styled("[-] ", Style::default().fg(Color::DarkGray)),
+        };
+
+        let label_style = if is_selected {
+            Style::default().fg(Color::White).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::White)
+        };
+
+        let path_style = if is_selected {
+            Style::default().fg(Color::LightCyan)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        };
+
+        let display_desc = match item.target {
+            PathPickerTarget::GlobalCaches => {
+                let cache_bytes = app.get_total_global_cache_bytes();
+                if cache_bytes > 0 {
+                    format!("{} central caches (Cargo, npm, Ollama...)", format_bytes(cache_bytes))
+                } else {
+                    item.path_display.clone()
+                }
+            }
+            _ => item.path_display.clone(),
+        };
+
+        let padded_label = format!("{:<width$}", item.label, width = max_label_len);
+
+        let mut spans = vec![
+            prefix,
+            key_badge,
+            Span::styled(padded_label, label_style),
+        ];
+
+        if !display_desc.is_empty() {
+            spans.push(Span::raw("  "));
+            spans.push(Span::styled(format!("({})", display_desc), path_style));
+        }
+
+        let line = Line::from(spans);
+        let styled_line = if is_selected {
+            line.patch_style(Style::default().bg(Color::Rgb(30, 42, 65)))
+        } else {
+            line
+        };
+
+        lines.push(styled_line);
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "  ───────────────────────────────────────────────────────────────────",
+        Style::default().fg(Color::DarkGray),
+    )));
+    lines.push(Line::from(vec![
+        Span::styled("  [↑/↓] ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::styled("Navigate   ", Style::default().fg(Color::DarkGray)),
+        Span::styled("[Enter] ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::styled("Scan   ", Style::default().fg(Color::DarkGray)),
+        Span::styled("[1-9] ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::styled("Quick Pick   ", Style::default().fg(Color::DarkGray)),
+        Span::styled("[C] ", Style::default().fg(Color::LightCyan).add_modifier(Modifier::BOLD)),
+        Span::styled("Custom Path   ", Style::default().fg(Color::DarkGray)),
+        Span::styled("[G] ", Style::default().fg(Color::LightCyan).add_modifier(Modifier::BOLD)),
+        Span::styled("Global Caches   ", Style::default().fg(Color::DarkGray)),
+        Span::styled("[Esc/q] ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        Span::styled("Quit", Style::default().fg(Color::DarkGray)),
+    ]));
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+        .title(Span::styled(
+            " Select Target Directory to Scan ",
+            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+        ));
+
+    let paragraph = Paragraph::new(lines).block(block);
+    f.render_widget(paragraph, area);
+}
+
+fn render_custom_path_input(f: &mut Frame, app: &App, picker: &PathPickerState, area: Rect) {
+    let mut lines = Vec::new();
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "  Enter or paste directory path to scan:",
+        Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+    )));
+    lines.push(Line::from(Span::styled(
+        "  (Supports Windows drives like D:\\projects, relative paths, or ~/code)",
+        Style::default().fg(Color::DarkGray),
+    )));
+    lines.push(Line::from(""));
+
+    let cursor = if (app.spinner_tick / 4) % 2 == 0 { "█" } else { " " };
+    let input_line = Line::from(vec![
+        Span::styled("  Path: ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::styled(&picker.custom_input, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        Span::styled(cursor, Style::default().fg(Color::Cyan)),
+    ]);
+    lines.push(input_line);
+    lines.push(Line::from(""));
+
+    if let Some(ref err) = picker.custom_error {
+        lines.push(Line::from(vec![
+            Span::styled("  ⚠  ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+            Span::styled(err, Style::default().fg(Color::Red)),
+        ]));
+    } else {
+        lines.push(Line::from(""));
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "  ───────────────────────────────────────────────────────────────────",
+        Style::default().fg(Color::DarkGray),
+    )));
+    lines.push(Line::from(vec![
+        Span::styled("  [Enter] ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        Span::styled("Start Scan        ", Style::default().fg(Color::DarkGray)),
+        Span::styled("[Esc] ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        Span::styled("Back to List", Style::default().fg(Color::DarkGray)),
+    ]));
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+        .title(Span::styled(
+            " Enter Custom Directory Path ",
+            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+        ));
 
     let paragraph = Paragraph::new(lines).block(block);
     f.render_widget(paragraph, area);
