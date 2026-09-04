@@ -6,6 +6,7 @@ use ratatui::{
     Frame,
 };
 
+use crate::core::deleter::DeleteMode;
 use crate::core::git::GitStatus;
 use crate::core::size::format_bytes;
 use crate::ui::app::{App, DeletionState};
@@ -15,7 +16,7 @@ pub fn render_modal(f: &mut Frame, app: &App) {
         return;
     }
 
-    let area = centered_rect(65, 45, f.area());
+    let area = centered_rect(65, 50, f.area());
     f.render_widget(Clear, area); // Clears the background behind the modal
 
     match &app.deletion_state {
@@ -23,15 +24,33 @@ pub fn render_modal(f: &mut Frame, app: &App) {
             render_confirm_modal(f, app, area);
         }
         DeletionState::Deleting {
-            completed,
-            total,
+            current_target,
+            total_targets,
+            completed_targets,
             current_path,
             freed_bytes,
+            total_bytes,
+            mode,
         } => {
-            render_progress_modal(f, area, *completed, *total, current_path, *freed_bytes);
+            render_progress_modal(
+                f,
+                area,
+                app.spinner_tick,
+                *current_target,
+                *total_targets,
+                *completed_targets,
+                current_path,
+                *freed_bytes,
+                *total_bytes,
+                *mode,
+            );
         }
-        DeletionState::Done { freed_bytes, errors } => {
-            render_done_modal(f, area, *freed_bytes, *errors);
+        DeletionState::Done {
+            freed_bytes,
+            errors,
+            mode,
+        } => {
+            render_done_modal(f, area, *freed_bytes, *errors, *mode);
         }
         DeletionState::Idle => {}
     }
@@ -142,25 +161,89 @@ fn render_confirm_modal(f: &mut Frame, app: &App, area: Rect) {
 fn render_progress_modal(
     f: &mut Frame,
     area: Rect,
-    completed: usize,
-    total: usize,
+    spinner_tick: usize,
+    current_target: usize,
+    total_targets: usize,
+    completed_targets: usize,
     current_path: &str,
     freed_bytes: u64,
+    total_bytes: u64,
+    mode: DeleteMode,
 ) {
-    let pct = if total > 0 {
-        (completed * 100) / total
-    } else {
-        0
-    };
-
     let bar_width = 30usize;
-    let filled = if total > 0 {
-        (completed * bar_width) / total
-    } else {
-        0
+    let spinner_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+    let spinner = spinner_frames[(spinner_tick / 2) % spinner_frames.len()];
+
+    let (action_title, bar_str, status_line) = match mode {
+        DeleteMode::Trash => {
+            if total_targets <= 1 {
+                // Indeterminate marquee progress bar for atomic OS move to Recycle Bin
+                let block_size = 8usize;
+                let cycle = bar_width + block_size;
+                let pos = (spinner_tick / 2) % cycle;
+                let mut chars = vec!['░'; bar_width];
+                for i in 0..block_size {
+                    if pos >= i && (pos - i) < bar_width {
+                        chars[pos - i] = '█';
+                    }
+                }
+                let bar_display: String = chars.into_iter().collect();
+                (
+                    "Moving to Trash...".to_string(),
+                    format!("[{}] moving...", bar_display),
+                    Line::from(vec![
+                        Span::styled("  Target size: ", Style::default().fg(Color::DarkGray)),
+                        Span::styled(
+                            format!("{} (moving into Recycle Bin)", format_bytes(total_bytes)),
+                            Style::default().fg(Color::LightCyan).add_modifier(Modifier::BOLD),
+                        ),
+                    ]),
+                )
+            } else {
+                let pct = (completed_targets * 100) / total_targets;
+                let filled = (pct * bar_width) / 100;
+                let empty = bar_width.saturating_sub(filled);
+                (
+                    format!("Moving target {} of {} to Trash...", current_target, total_targets),
+                    format!("[{}{}] {}% ({} of {})", "█".repeat(filled), "░".repeat(empty), pct, completed_targets, total_targets),
+                    Line::from(vec![
+                        Span::styled("  Moved to Trash: ", Style::default().fg(Color::DarkGray)),
+                        Span::styled(
+                            format!("{} / {}", format_bytes(freed_bytes), format_bytes(total_bytes)),
+                            Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+                        ),
+                    ]),
+                )
+            }
+        }
+        DeleteMode::Permanent => {
+            let pct = if total_bytes > 0 {
+                ((freed_bytes as f64 / total_bytes as f64) * 100.0).min(100.0) as usize
+            } else if total_targets > 0 {
+                (completed_targets * 100) / total_targets
+            } else {
+                0
+            };
+
+            let filled = (pct * bar_width) / 100;
+            let empty = bar_width.saturating_sub(filled);
+            (
+                format!("Cleaning target {} of {}...", current_target, total_targets),
+                format!("[{}{}] {}%", "█".repeat(filled), "░".repeat(empty), pct),
+                Line::from(vec![
+                    Span::styled("  Reclaimed so far: ", Style::default().fg(Color::DarkGray)),
+                    Span::styled(
+                        if total_bytes > 0 {
+                            format!("{} / {}", format_bytes(freed_bytes), format_bytes(total_bytes))
+                        } else {
+                            format_bytes(freed_bytes)
+                        },
+                        Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+                    ),
+                ]),
+            )
+        }
     };
-    let empty = bar_width.saturating_sub(filled);
-    let bar_str = format!("[{}{}] {}%", "█".repeat(filled), "░".repeat(empty), pct);
 
     let display_path = if current_path.len() > 45 {
         format!("...{}", &current_path[current_path.len().saturating_sub(42)..])
@@ -171,9 +254,9 @@ fn render_progress_modal(
     let lines = vec![
         Line::from(""),
         Line::from(vec![
-            Span::styled("  ⏳ ", Style::default().fg(Color::Yellow)),
+            Span::styled(format!("  {} ", spinner), Style::default().fg(Color::Yellow)),
             Span::styled(
-                format!("Cleaning target {} of {}...", completed, total),
+                action_title,
                 Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
             ),
         ]),
@@ -183,13 +266,7 @@ fn render_progress_modal(
             Span::styled(bar_str, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
         ]),
         Line::from(""),
-        Line::from(vec![
-            Span::styled("  Reclaimed so far: ", Style::default().fg(Color::DarkGray)),
-            Span::styled(
-                format_bytes(freed_bytes),
-                Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
-            ),
-        ]),
+        status_line,
         Line::from(""),
         Line::from(vec![
             Span::styled("  Current: ", Style::default().fg(Color::DarkGray)),
@@ -206,26 +283,59 @@ fn render_progress_modal(
     f.render_widget(paragraph, area);
 }
 
-fn render_done_modal(f: &mut Frame, area: Rect, freed_bytes: u64, errors: usize) {
-    let mut lines = vec![
-        Line::from(""),
-        Line::from(vec![
-            Span::styled("  ✔ ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
-            Span::styled(
-                "Cleanup Complete!",
-                Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
-            ),
-        ]),
-        Line::from(""),
-        Line::from(vec![
-            Span::styled("  Successfully reclaimed ", Style::default().fg(Color::White)),
-            Span::styled(
-                format_bytes(freed_bytes),
-                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(" of disk space.", Style::default().fg(Color::White)),
-        ]),
-    ];
+fn render_done_modal(f: &mut Frame, area: Rect, freed_bytes: u64, errors: usize, mode: DeleteMode) {
+    let mut lines = match mode {
+        DeleteMode::Trash => vec![
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("  ✔ ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "Moved to Recycle Bin!",
+                    Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+                ),
+            ]),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("  Successfully moved ", Style::default().fg(Color::White)),
+                Span::styled(
+                    format_bytes(freed_bytes),
+                    Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(" to the Recycle Bin.", Style::default().fg(Color::White)),
+            ]),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("  ℹ Storage Note: ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "Files are in your Recycle Bin and remain recoverable.",
+                    Style::default().fg(Color::White),
+                ),
+            ]),
+            Line::from(Span::styled(
+                "    To permanently free up disk space, remember to empty your Recycle Bin.",
+                Style::default().fg(Color::DarkGray),
+            )),
+        ],
+        DeleteMode::Permanent => vec![
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("  ✔ ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "Cleanup Complete!",
+                    Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+                ),
+            ]),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("  Successfully reclaimed ", Style::default().fg(Color::White)),
+                Span::styled(
+                    format_bytes(freed_bytes),
+                    Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(" of disk space.", Style::default().fg(Color::White)),
+            ]),
+        ],
+    };
 
     if errors > 0 {
         lines.push(Line::from(""));

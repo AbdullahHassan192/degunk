@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
 
-use crate::core::deleter::{delete_path, DeleteMode, DeleteProgressMessage};
+use crate::core::deleter::{delete_path_with_progress, DeleteMode, DeleteProgressMessage};
 use crate::core::ecosystem::Ecosystem;
 use crate::core::global_cache::{
     detect_global_caches, start_global_cache_scan, GlobalCacheMessage, GlobalCacheTarget,
@@ -42,14 +42,18 @@ pub enum DeletionState {
     Idle,
     Confirming,
     Deleting {
-        completed: usize,
-        total: usize,
+        current_target: usize,
+        total_targets: usize,
+        completed_targets: usize,
         current_path: String,
         freed_bytes: u64,
+        total_bytes: u64,
+        mode: DeleteMode,
     },
     Done {
         freed_bytes: u64,
         errors: usize,
+        mode: DeleteMode,
     },
 }
 
@@ -75,6 +79,7 @@ pub enum TableItem {
         is_expanded: bool,
         selection_state: GroupSelectionState,
         all_deleted: bool,
+        is_deleting: bool,
     },
     ChildArtifact {
         group_key: String,
@@ -90,6 +95,7 @@ pub enum TableItem {
         activity: Option<crate::core::git::ProjectActivity>,
         is_selected: bool,
         is_deleted: bool,
+        is_deleting: bool,
         is_last: bool,
     },
 }
@@ -107,6 +113,7 @@ pub struct App {
     pub is_searching: bool,
     pub sort_mode: SortMode,
     pub deletion_state: DeletionState,
+    pub deleting_paths: HashSet<PathBuf>,
     pub should_quit: bool,
     pub collapsed_groups: HashSet<String>,
 
@@ -140,6 +147,7 @@ impl App {
             is_searching: false,
             sort_mode: SortMode::SizeDesc,
             deletion_state: DeletionState::Idle,
+            deleting_paths: HashSet::new(),
             should_quit: false,
             collapsed_groups: HashSet::new(),
             active_tab: ActiveTab::Projects,
@@ -261,25 +269,51 @@ impl App {
             while let Ok(msg) = rx.try_recv() {
                 match msg {
                     DeleteProgressMessage::Progress {
-                        current_index,
-                        total_count,
+                        current_target,
+                        total_targets,
+                        completed_targets,
                         current_path,
                         freed_bytes,
+                        total_bytes,
+                        mode,
                     } => {
                         self.deletion_state = DeletionState::Deleting {
-                            completed: current_index,
-                            total: total_count,
+                            current_target,
+                            total_targets,
+                            completed_targets,
                             current_path,
                             freed_bytes,
+                            total_bytes,
+                            mode,
                         };
+                    }
+                    DeleteProgressMessage::TargetFinished { path, success } => {
+                        self.deleting_paths.remove(&path);
+                        if success {
+                            for art in &mut self.artifacts {
+                                if art.target_path == path {
+                                    art.is_deleted = true;
+                                    art.is_selected = false;
+                                }
+                            }
+                            for cache in &mut self.global_caches {
+                                if cache.path == path {
+                                    cache.is_deleted = true;
+                                    cache.is_selected = false;
+                                }
+                            }
+                        }
                     }
                     DeleteProgressMessage::Done {
                         freed_bytes,
                         errors,
+                        mode,
                     } => {
+                        self.deleting_paths.clear();
                         self.deletion_state = DeletionState::Done {
                             freed_bytes,
                             errors,
+                            mode,
                         };
                         deletion_finished = true;
                     }
@@ -334,6 +368,7 @@ impl App {
             all_locked: bool,
             selection_state: GroupSelectionState,
             all_deleted: bool,
+            is_deleting: bool,
             is_expanded: bool,
             items: Vec<&'a DiscoveredArtifact>,
         }
@@ -349,6 +384,7 @@ impl App {
                     .map(|a| a.size_bytes)
                     .sum();
                 let all_deleted = items.iter().all(|a| a.is_deleted);
+                let is_deleting = items.iter().any(|a| self.deleting_paths.contains(&a.target_path));
 
                 let active_items: Vec<_> = items.iter().filter(|a| !a.is_deleted).collect();
                 let selection_state = if all_deleted {
@@ -383,6 +419,7 @@ impl App {
                     all_locked,
                     selection_state,
                     all_deleted,
+                    is_deleting,
                     is_expanded,
                     items,
                 }
@@ -422,6 +459,7 @@ impl App {
                 is_expanded,
                 selection_state: g.selection_state,
                 all_deleted: g.all_deleted,
+                is_deleting: g.is_deleting,
             });
 
             if is_expanded {
@@ -433,6 +471,8 @@ impl App {
                     } else {
                         format!("{}/{}", item.sub_path, item.folder_name)
                     };
+
+                    let is_deleting = self.deleting_paths.contains(&item.target_path);
 
                     visible_items.push(TableItem::ChildArtifact {
                         group_key: g.group_key.clone(),
@@ -448,6 +488,7 @@ impl App {
                         activity: item.activity.clone(),
                         is_selected: item.is_selected,
                         is_deleted: item.is_deleted,
+                        is_deleting,
                         is_last,
                     });
                 }
@@ -815,8 +856,7 @@ impl App {
                 let mut list = Vec::new();
                 for art in &mut self.artifacts {
                     if art.is_selected && !art.is_deleted {
-                        art.is_deleted = true;
-                        art.is_selected = false;
+                        self.deleting_paths.insert(art.target_path.clone());
                         list.push((art.target_path.clone(), art.size_bytes));
                     }
                 }
@@ -826,8 +866,7 @@ impl App {
                 let mut list = Vec::new();
                 for cache in &mut self.global_caches {
                     if cache.is_selected && !cache.is_deleted {
-                        cache.is_deleted = true;
-                        cache.is_selected = false;
+                        self.deleting_paths.insert(cache.path.clone());
                         list.push((cache.path.clone(), cache.size_bytes));
                     }
                 }
@@ -835,45 +874,94 @@ impl App {
             }
         };
 
-        let total = targets.len();
+        let total_targets = targets.len();
+        let total_bytes: u64 = targets.iter().map(|(_, size)| *size).sum();
         let initial_path = targets
             .first()
             .map(|(p, _)| p.display().to_string())
             .unwrap_or_default();
 
         self.deletion_state = DeletionState::Deleting {
-            completed: 0,
-            total,
+            current_target: if total_targets > 0 { 1 } else { 0 },
+            total_targets,
+            completed_targets: 0,
             current_path: initial_path,
             freed_bytes: 0,
+            total_bytes,
+            mode,
         };
 
         thread::spawn(move || {
-            let mut freed_bytes = 0u64;
+            let mut total_freed_bytes = 0u64;
             let mut errors = 0usize;
 
-            for (idx, (path, size)) in targets.into_iter().enumerate() {
+            for (idx, (path, target_size)) in targets.into_iter().enumerate() {
                 let path_display = path.display().to_string();
+                let current_target = idx + 1;
+                let completed_targets = idx;
+
                 let _ = tx.send(DeleteProgressMessage::Progress {
-                    current_index: idx + 1,
-                    total_count: total,
-                    current_path: path_display,
-                    freed_bytes,
+                    current_target,
+                    total_targets,
+                    completed_targets,
+                    current_path: path_display.clone(),
+                    freed_bytes: total_freed_bytes,
+                    total_bytes,
+                    mode,
                 });
 
-                match delete_path(&path, mode) {
-                    Ok(()) => {
-                        freed_bytes += size;
+                let tx_clone = tx.clone();
+                let path_disp_clone = path_display.clone();
+
+                let mut current_target_freed = 0u64;
+                let result = delete_path_with_progress(
+                    &path,
+                    mode,
+                    move |incremental_bytes| {
+                        current_target_freed += incremental_bytes;
+                        let _ = tx_clone.send(DeleteProgressMessage::Progress {
+                            current_target,
+                            total_targets,
+                            completed_targets,
+                            current_path: path_disp_clone.clone(),
+                            freed_bytes: total_freed_bytes + current_target_freed,
+                            total_bytes,
+                            mode,
+                        });
+                    },
+                );
+
+                let success = result.is_ok();
+                if success {
+                    if current_target_freed == 0 {
+                        total_freed_bytes += target_size;
+                    } else {
+                        total_freed_bytes += current_target_freed;
                     }
-                    Err(_) => {
-                        errors += 1;
-                    }
+                } else {
+                    errors += 1;
                 }
+
+                let _ = tx.send(DeleteProgressMessage::TargetFinished {
+                    path: path.clone(),
+                    success,
+                });
+
+                let _ = tx.send(DeleteProgressMessage::Progress {
+                    current_target,
+                    total_targets,
+                    completed_targets: idx + 1,
+                    current_path: path_display,
+                    freed_bytes: total_freed_bytes,
+                    total_bytes,
+                    mode,
+                });
             }
 
             let _ = tx.send(DeleteProgressMessage::Done {
-                freed_bytes,
+                freed_bytes: total_freed_bytes,
                 errors,
+                mode,
             });
         });
     }
