@@ -118,6 +118,20 @@ fn should_skip_dir(name: &str, path: &Path, include_cloud: bool) -> bool {
         }
     }
 
+    // Handle .cache: allow when inside a project directory with standard web manifests
+    if lower_name == ".cache" {
+        if let Some(parent) = path.parent() {
+            if parent.join("package.json").exists()
+                || parent.join("gatsby-config.js").exists()
+                || parent.join("gatsby-config.ts").exists()
+                || parent.join("gatsby-config.mjs").exists()
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
     // 3. Tool runtimes, package manager caches, IDE extensions, and SDK internals
     if matches!(
         lower_name.as_str(),
@@ -147,7 +161,6 @@ fn should_skip_dir(name: &str, path: &Path, include_cloud: bool) -> bool {
             | "miniconda3"
             | ".nuget"
             | "site-packages"
-            | ".cache"
             | ".terraform.d"
     ) {
         return true;
@@ -425,6 +438,26 @@ pub fn resolve_root_project(current_dir: &Path, root_dir: &Path) -> (PathBuf, St
                 || parent.join("stack.yaml").exists()
                 || parent.join("dune-project").exists()
                 || parent.join("angular.json").exists()
+                || parent.join("build.gradle").exists()
+                || parent.join("build.gradle.kts").exists()
+                || parent.join("CMakeLists.txt").exists()
+                || parent.join("platformio.ini").exists()
+                || parent.join("vcpkg.json").exists()
+                || parent.join("renv.lock").exists()
+                || parent.join("project.clj").exists()
+                || parent.join("deps.edn").exists()
+                || parent.join("elm.json").exists()
+                || parent.join("Project.toml").exists()
+                || crate::core::ecosystem::has_manifest(
+                    parent,
+                    &[
+                        "*.uproject",
+                        "*.Rproj",
+                        "*.sln",
+                        "*.csproj",
+                        "*.fsproj",
+                    ],
+                )
                 || parent.join(".git").exists();
             if has_manifest {
                 best_root = parent.to_path_buf();

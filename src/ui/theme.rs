@@ -56,6 +56,14 @@ impl Theme {
             Ecosystem::Haskell => Color::Rgb(94, 80, 134),   // Haskell purple
             Ecosystem::Ocaml => Color::Rgb(238, 106, 26),    // OCaml orange
             Ecosystem::Terraform => Color::Rgb(123, 66, 188),// Terraform purple
+            Ecosystem::Unreal => Color::Rgb(14, 114, 184),   // Unreal blue
+            Ecosystem::R => Color::Rgb(39, 109, 195),        // R blue
+            Ecosystem::Android => Color::Rgb(61, 220, 132),  // Android green
+            Ecosystem::ReactNative => Color::Rgb(97, 218, 251), // React cyan
+            Ecosystem::Embedded => Color::Rgb(229, 87, 36),  // PlatformIO orange
+            Ecosystem::Elm => Color::Rgb(96, 181, 204),      // Elm teal
+            Ecosystem::Clojure => Color::Rgb(107, 181, 74),  // Clojure lime green
+            Ecosystem::Julia => Color::Rgb(149, 88, 178),    // Julia purple
         }
     }
 
