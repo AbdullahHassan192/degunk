@@ -62,6 +62,10 @@ pub struct Cli {
     /// Perform a dry run without actually deleting anything
     #[arg(long = "dry-run")]
     pub dry_run: bool,
+
+    /// Include global tool caches (e.g. npm, cargo, pip) in scan and output
+    #[arg(long = "global")]
+    pub global: bool,
 }
 
 impl Cli {
@@ -185,14 +189,19 @@ pub fn run_cli(cli: &Cli) {
         total_bytes += a.size_bytes;
     }
 
-    use rayon::prelude::*;
-    let mut global_caches = crate::core::global_cache::detect_global_caches();
-    global_caches.par_iter_mut().for_each(|cache| {
-        let stats = crate::core::size::calculate_dir_size(&cache.path);
-        cache.size_bytes = stats.bytes;
-        cache.file_count = stats.file_count;
-        cache.size_calculated = true;
-    });
+    let global_caches = if cli.global {
+        use rayon::prelude::*;
+        let mut caches = crate::core::global_cache::detect_global_caches();
+        caches.par_iter_mut().for_each(|cache| {
+            let stats = crate::core::size::calculate_dir_size(&cache.path);
+            cache.size_bytes = stats.bytes;
+            cache.file_count = stats.file_count;
+            cache.size_calculated = true;
+        });
+        caches
+    } else {
+        Vec::new()
+    };
 
     if cli.json {
         #[derive(serde::Serialize)]
@@ -316,5 +325,19 @@ fn truncate_str(s: &str, max: usize) -> String {
         format!("{}...", &s[..max.saturating_sub(3)])
     } else {
         s.to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cli_global_flag() {
+        let cli1 = Cli::parse_from(["degunk", "--scan", "."]);
+        assert!(!cli1.global);
+
+        let cli2 = Cli::parse_from(["degunk", "--scan", "--global", "."]);
+        assert!(cli2.global);
     }
 }

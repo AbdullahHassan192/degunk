@@ -475,24 +475,41 @@ pub fn match_rule(folder_name: &str, parent_path: &Path) -> Option<&'static Arti
 
 /// Checks if any required manifest exists in the directory.
 pub fn has_manifest(dir: &Path, manifests: &[&'static str]) -> bool {
-    manifests.iter().any(|&m| {
-        if m.starts_with("*.") {
-            // Wildcard extension check
-            let ext = &m[2..];
-            if let Ok(entries) = std::fs::read_dir(dir) {
-                for entry in entries.flatten() {
-                    if let Some(e) = entry.path().extension() {
-                        if e.to_string_lossy().eq_ignore_ascii_case(ext) {
-                            return true;
-                        }
-                    }
+    // 1. Fast path: check exact filenames directly with cheap stat checks
+    for &m in manifests {
+        if !m.starts_with("*.") && dir.join(m).exists() {
+            return true;
+        }
+    }
+
+    // 2. Identify wildcard patterns
+    let wildcards: Vec<&'static str> = manifests
+        .iter()
+        .copied()
+        .filter(|m| m.starts_with("*."))
+        .collect();
+
+    if wildcards.is_empty() {
+        return false;
+    }
+
+    // 3. Read directory entries once and test against all wildcard patterns
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let name_str = name.to_string_lossy();
+            for &w in &wildcards {
+                let suffix = &w[1..]; // e.g. ".sln", ".vcxproj", ".vcxproj.filters"
+                if name_str.len() >= suffix.len()
+                    && name_str[name_str.len() - suffix.len()..].eq_ignore_ascii_case(suffix)
+                {
+                    return true;
                 }
             }
-            false
-        } else {
-            dir.join(m).exists()
         }
-    })
+    }
+
+    false
 }
 
 /// Checks if any known lockfile exists in the directory.
@@ -536,6 +553,37 @@ mod tests {
         let matched = match_rule("node_modules", &temp_dir);
         assert!(matched.is_some());
         assert_eq!(matched.unwrap().ecosystem, Ecosystem::Node);
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_has_manifest_wildcards_and_exact() {
+        let temp_dir = std::env::temp_dir().join("degunk_test_manifest_wildcards");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let manifests = &["CMakeLists.txt", "Makefile", "*.sln", "*.vcxproj", "*.vcxproj.filters"];
+
+        // Initially no files exist
+        assert!(!has_manifest(&temp_dir, manifests));
+
+        // Exact match
+        let cmake = temp_dir.join("CMakeLists.txt");
+        File::create(&cmake).unwrap();
+        assert!(has_manifest(&temp_dir, manifests));
+        std::fs::remove_file(&cmake).unwrap();
+
+        // Single wildcard extension match
+        let sln = temp_dir.join("MyProject.sln");
+        File::create(&sln).unwrap();
+        assert!(has_manifest(&temp_dir, manifests));
+        std::fs::remove_file(&sln).unwrap();
+
+        // Compound wildcard extension match
+        let filters = temp_dir.join("MyProject.vcxproj.filters");
+        File::create(&filters).unwrap();
+        assert!(has_manifest(&temp_dir, manifests));
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }

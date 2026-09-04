@@ -2,10 +2,11 @@ use chrono::{DateTime, Local, TimeZone, Utc};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::{OnceLock, RwLock};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 
 static GIT_AVAILABLE: OnceLock<bool> = OnceLock::new();
 static GIT_REPO_CACHE: OnceLock<RwLock<HashMap<PathBuf, (usize, usize)>>> = OnceLock::new();
+static GIT_REPO_LOCKS: OnceLock<Mutex<HashMap<PathBuf, Arc<Mutex<()>>>>> = OnceLock::new();
 
 fn is_git_available() -> bool {
     *GIT_AVAILABLE.get_or_init(|| {
@@ -19,6 +20,15 @@ fn is_git_available() -> bool {
 
 fn get_repo_cache() -> &'static RwLock<HashMap<PathBuf, (usize, usize)>> {
     GIT_REPO_CACHE.get_or_init(|| RwLock::new(HashMap::new()))
+}
+
+fn get_repo_lock(git_root: &Path) -> Arc<Mutex<()>> {
+    let locks = GIT_REPO_LOCKS.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut guard = locks.lock().unwrap();
+    guard
+        .entry(git_root.to_path_buf())
+        .or_insert_with(|| Arc::new(Mutex::new(())))
+        .clone()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -128,46 +138,61 @@ fn inspect_git_repo(git_root: &Path, project_dir: &Path) -> Option<ProjectActivi
     let duration = now.signed_duration_since(last_active);
     let days_inactive = duration.num_days().max(0) as u32;
 
-    // 2. Query or retrieve cached repo status
+    // 2. Query or retrieve cached repo status with per-repository mutual exclusion
     let (repo_changed_count, unpushed_count) = {
-        let cache_read = get_repo_cache().read().unwrap();
-        if let Some(&counts) = cache_read.get(git_root) {
+        let cached = {
+            let cache_read = get_repo_cache().read().unwrap();
+            cache_read.get(git_root).copied()
+        };
+
+        if let Some(counts) = cached {
             counts
         } else {
-            drop(cache_read);
-            let status_out = Command::new("git")
-                .args(["status", "--porcelain"])
-                .current_dir(git_root)
-                .output()
-                .ok();
-            let changed = match status_out {
-                Some(ref out) if out.status.success() => {
-                    String::from_utf8_lossy(&out.stdout)
-                        .lines()
-                        .filter(|l| !l.trim().is_empty())
-                        .count()
-                }
-                _ => 0,
+            let repo_lock = get_repo_lock(git_root);
+            let _guard = repo_lock.lock().unwrap();
+
+            let cached_again = {
+                let cache_read = get_repo_cache().read().unwrap();
+                cache_read.get(git_root).copied()
             };
 
-            let ahead_out = Command::new("git")
-                .args(["rev-list", "--count", "@{u}..HEAD"])
-                .current_dir(git_root)
-                .output()
-                .ok();
-            let unpushed = match ahead_out {
-                Some(ref out) if out.status.success() => {
-                    String::from_utf8_lossy(&out.stdout)
-                        .trim()
-                        .parse::<usize>()
-                        .unwrap_or(0)
-                }
-                _ => 0,
-            };
+            if let Some(counts) = cached_again {
+                counts
+            } else {
+                let status_out = Command::new("git")
+                    .args(["status", "--porcelain"])
+                    .current_dir(git_root)
+                    .output()
+                    .ok();
+                let changed = match status_out {
+                    Some(ref out) if out.status.success() => {
+                        String::from_utf8_lossy(&out.stdout)
+                            .lines()
+                            .filter(|l| !l.trim().is_empty())
+                            .count()
+                    }
+                    _ => 0,
+                };
 
-            let mut cache_write = get_repo_cache().write().unwrap();
-            cache_write.insert(git_root.to_path_buf(), (changed, unpushed));
-            (changed, unpushed)
+                let ahead_out = Command::new("git")
+                    .args(["rev-list", "--count", "@{u}..HEAD"])
+                    .current_dir(git_root)
+                    .output()
+                    .ok();
+                let unpushed = match ahead_out {
+                    Some(ref out) if out.status.success() => {
+                        String::from_utf8_lossy(&out.stdout)
+                            .trim()
+                            .parse::<usize>()
+                            .unwrap_or(0)
+                    }
+                    _ => 0,
+                };
+
+                let mut cache_write = get_repo_cache().write().unwrap();
+                cache_write.insert(git_root.to_path_buf(), (changed, unpushed));
+                (changed, unpushed)
+            }
         }
     };
 
@@ -175,7 +200,11 @@ fn inspect_git_repo(git_root: &Path, project_dir: &Path) -> Option<ProjectActivi
     let changed_count = if repo_changed_count == 0 || rel_str.is_empty() {
         repo_changed_count
     } else {
-        // Scoped check only when the repo has modifications
+        // Scoped check only when the repo has modifications.
+        // Acquire repo_lock to avoid index.lock contention during concurrent subproject checks.
+        let repo_lock = get_repo_lock(git_root);
+        let _guard = repo_lock.lock().unwrap();
+
         let status_output = Command::new("git")
             .args(["status", "--porcelain", "--", rel_str.as_ref()])
             .current_dir(git_root)
@@ -219,4 +248,38 @@ fn get_last_modified_time(path: &Path) -> DateTime<Local> {
         }
     }
     Local::now()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rayon::prelude::*;
+
+    #[test]
+    fn test_concurrent_monorepo_git_inspection() {
+        let current_dir = std::env::current_dir().unwrap();
+        if find_git_root(&current_dir).is_none() {
+            return;
+        }
+
+        let subdirs = vec![
+            current_dir.join("src"),
+            current_dir.join("src/core"),
+            current_dir.join("src/ui"),
+            current_dir.join("tests"),
+        ];
+
+        let results: Vec<ProjectActivity> = (0..32)
+            .into_par_iter()
+            .map(|i| {
+                let path = &subdirs[i % subdirs.len()];
+                inspect_project_activity(path)
+            })
+            .collect();
+
+        assert_eq!(results.len(), 32);
+        for res in results {
+            assert!(res.is_git);
+        }
+    }
 }

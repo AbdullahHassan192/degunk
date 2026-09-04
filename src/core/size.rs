@@ -1,33 +1,78 @@
 use std::path::Path;
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct FolderStats {
     pub bytes: u64,
     pub file_count: usize,
 }
 
-/// Recursively calculates the total disk size and file count of a directory.
+/// Recursively calculates the total disk size and file count of a directory
+/// using parallel work-stealing directory descent via Rayon.
 pub fn calculate_dir_size(path: &Path) -> FolderStats {
-    let mut total_bytes = 0u64;
-    let mut file_count = 0usize;
-
-    let walker = walkdir::WalkDir::new(path)
-        .same_file_system(true)
-        .follow_links(false)
-        .into_iter();
-
-    for entry in walker.filter_map(|e| e.ok()) {
-        if let Ok(metadata) = entry.metadata() {
-            if metadata.is_file() {
-                total_bytes += metadata.len();
-                file_count += 1;
+    let read_res = match std::fs::read_dir(path) {
+        Ok(res) => res,
+        Err(_) => {
+            if let Ok(meta) = std::fs::symlink_metadata(path) {
+                if meta.is_file() {
+                    return FolderStats {
+                        bytes: meta.len(),
+                        file_count: 1,
+                    };
+                }
             }
+            return FolderStats::default();
+        }
+    };
+
+    let mut local_bytes = 0u64;
+    let mut local_files = 0usize;
+    let mut subdirs = Vec::new();
+
+    for entry in read_res.flatten() {
+        let ft = match entry.file_type() {
+            Ok(ft) => ft,
+            Err(_) => continue,
+        };
+
+        if ft.is_symlink() {
+            continue;
+        }
+
+        if ft.is_file() {
+            if let Ok(meta) = entry.metadata() {
+                local_bytes += meta.len();
+                local_files += 1;
+            }
+        } else if ft.is_dir() {
+            subdirs.push(entry.path());
         }
     }
 
-    FolderStats {
-        bytes: total_bytes,
-        file_count,
+    if subdirs.is_empty() {
+        FolderStats {
+            bytes: local_bytes,
+            file_count: local_files,
+        }
+    } else if subdirs.len() == 1 {
+        let sub_stats = calculate_dir_size(&subdirs[0]);
+        FolderStats {
+            bytes: local_bytes + sub_stats.bytes,
+            file_count: local_files + sub_stats.file_count,
+        }
+    } else {
+        use rayon::prelude::*;
+        let sub_stats: FolderStats = subdirs
+            .into_par_iter()
+            .map(|sub| calculate_dir_size(&sub))
+            .reduce(FolderStats::default, |a, b| FolderStats {
+                bytes: a.bytes + b.bytes,
+                file_count: a.file_count + b.file_count,
+            });
+
+        FolderStats {
+            bytes: local_bytes + sub_stats.bytes,
+            file_count: local_files + sub_stats.file_count,
+        }
     }
 }
 
@@ -107,9 +152,13 @@ mod tests {
         std::fs::write(temp_dir.join("a.txt"), b"12345").unwrap();
         std::fs::write(temp_dir.join("b.txt"), b"12345").unwrap();
 
+        let sub = temp_dir.join("sub");
+        std::fs::create_dir_all(&sub).unwrap();
+        std::fs::write(sub.join("c.txt"), b"1234567890").unwrap();
+
         let stats = calculate_dir_size(&temp_dir);
-        assert_eq!(stats.bytes, 10);
-        assert_eq!(stats.file_count, 2);
+        assert_eq!(stats.bytes, 20);
+        assert_eq!(stats.file_count, 3);
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
