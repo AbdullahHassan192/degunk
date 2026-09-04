@@ -122,3 +122,42 @@ fn test_scanner_skips_onedrive_folders() {
     let _ = fs::remove_dir_all(&temp_dir);
 }
 
+#[test]
+fn test_scanner_skips_unix_system_dirs() {
+    let temp_dir = std::env::temp_dir().join("degunk_test_unix_sys_skip");
+    let _ = fs::remove_dir_all(&temp_dir);
+    fs::create_dir_all(&temp_dir).unwrap();
+
+    // Create proc, sys, dev, run dirs with fake project artifacts inside
+    for sys_dir in ["proc", "sys", "dev", "run"] {
+        let dir = temp_dir.join(sys_dir).join("fake_proj");
+        fs::create_dir_all(dir.join("node_modules")).unwrap();
+        let mut f = File::create(dir.join("package.json")).unwrap();
+        writeln!(f, r#"{{"name":"sys_proj"}}"#).unwrap();
+    }
+
+    // Create a normal valid project
+    let valid_dir = temp_dir.join("workspace").join("real_proj");
+    fs::create_dir_all(valid_dir.join("node_modules")).unwrap();
+    let mut f = File::create(valid_dir.join("package.json")).unwrap();
+    writeln!(f, r#"{{"name":"real_proj"}}"#).unwrap();
+
+    let (tx, rx) = crossbeam_channel::unbounded();
+    let cancel = Arc::new(AtomicBool::new(false));
+
+    Scanner::start_scan(vec![temp_dir.clone()], tx, cancel, None, false);
+
+    let mut found = Vec::new();
+    while let Ok(msg) = rx.recv() {
+        match msg {
+            ScanMessage::Found(art) => found.push(art),
+            ScanMessage::Finished { .. } => break,
+            _ => {}
+        }
+    }
+
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].project_name, "real_proj");
+
+    let _ = fs::remove_dir_all(&temp_dir);
+}

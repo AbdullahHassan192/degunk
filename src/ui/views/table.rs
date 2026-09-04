@@ -2,7 +2,10 @@ use ratatui::{
     layout::{Constraint, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Cell, HighlightSpacing, Row, Table},
+    widgets::{
+        Block, Borders, Cell, HighlightSpacing, Row, Scrollbar, ScrollbarOrientation,
+        ScrollbarState, Table,
+    },
     Frame,
 };
 
@@ -398,11 +401,17 @@ fn render_projects_table(f: &mut Frame, app: &mut App, area: Rect) {
         Constraint::Length(12),
     ];
 
+    let pos_indicator = if num_items > 0 {
+        format!(" [{}/{}]", app.selected_table_index + 1, num_items)
+    } else {
+        String::new()
+    };
+
     let title = if let Some(ref eco) = app.allowed_ecosystems {
         let ecos: Vec<_> = eco.iter().map(|e| e.name()).collect();
-        format!(" Artifacts [Filtered: {}] (Sort: {:?}) ", ecos.join(", "), app.sort_mode)
+        format!(" Artifacts [Filtered: {}] (Sort: {:?}){} ", ecos.join(", "), app.sort_mode, pos_indicator)
     } else {
-        format!(" Artifacts (Sort: {:?}) ", app.sort_mode)
+        format!(" Artifacts (Sort: {:?}){} ", app.sort_mode, pos_indicator)
     };
 
     let table = Table::new(rows, widths)
@@ -419,6 +428,22 @@ fn render_projects_table(f: &mut Frame, app: &mut App, area: Rect) {
         );
 
     f.render_stateful_widget(table, area, &mut app.table_state);
+
+    if num_items > 0 {
+        let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+            .begin_symbol(Some("▲"))
+            .end_symbol(Some("▼"))
+            .track_symbol(Some("│"))
+            .thumb_symbol("█");
+        let scrollbar_area = Rect {
+            x: area.x,
+            y: area.y + 1,
+            width: area.width,
+            height: area.height.saturating_sub(2),
+        };
+        let mut scrollbar_state = ScrollbarState::new(num_items).position(app.selected_table_index);
+        f.render_stateful_widget(scrollbar, scrollbar_area, &mut scrollbar_state);
+    }
 }
 
 fn render_global_cache_table(f: &mut Frame, app: &mut App, area: Rect) {
@@ -565,11 +590,18 @@ fn render_global_cache_table(f: &mut Frame, app: &mut App, area: Rect) {
         Constraint::Percentage(25),
     ];
 
+    let pos_indicator = if num_caches > 0 {
+        format!(" [{}/{}]", app.selected_cache_index + 1, num_caches)
+    } else {
+        String::new()
+    };
+
     let total_bytes: u64 = app.global_caches.iter().filter(|c| !c.is_deleted).map(|c| c.size_bytes).sum();
     let title = format!(
-        " Global Developer Tool Caches (Sort: {:?}) ({}) ",
+        " Global Developer Tool Caches (Sort: {:?}) ({}){} ",
         app.sort_mode,
-        format_bytes(total_bytes)
+        format_bytes(total_bytes),
+        pos_indicator
     );
 
     let table = Table::new(rows, widths)
@@ -586,4 +618,20 @@ fn render_global_cache_table(f: &mut Frame, app: &mut App, area: Rect) {
         );
 
     f.render_stateful_widget(table, area, &mut app.cache_table_state);
+
+    if num_caches > 0 {
+        let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+            .begin_symbol(Some("▲"))
+            .end_symbol(Some("▼"))
+            .track_symbol(Some("│"))
+            .thumb_symbol("█");
+        let scrollbar_area = Rect {
+            x: area.x,
+            y: area.y + 1,
+            width: area.width,
+            height: area.height.saturating_sub(2),
+        };
+        let mut scrollbar_state = ScrollbarState::new(num_caches).position(app.selected_cache_index);
+        f.render_stateful_widget(scrollbar, scrollbar_area, &mut scrollbar_state);
+    }
 }

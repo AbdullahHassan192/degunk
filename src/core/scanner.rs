@@ -101,6 +101,10 @@ fn should_skip_dir(name: &str, path: &Path, include_cloud: bool) -> bool {
             | "program files (x86)"
             | "appdata"
             | "perflogs"
+            | "proc"
+            | "sys"
+            | "dev"
+            | "run"
     ) {
         return true;
     }

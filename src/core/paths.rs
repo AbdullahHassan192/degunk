@@ -163,36 +163,151 @@ pub fn detect_suggested_paths() -> Vec<SuggestedPath> {
     suggestions
 }
 
+/// Expands environment variables (%VAR% or $VAR / ${VAR}) and tilde (~) in a path string.
+pub fn expand_path_str(input: &str) -> String {
+    let trimmed = input.trim().trim_matches('"').trim_matches('\'').trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+
+    let mut result = trimmed.to_string();
+
+    // 1. Expand Windows-style %VAR%
+    if result.contains('%') {
+        let mut expanded = String::new();
+        let mut chars = result.chars().peekable();
+        while let Some(ch) = chars.next() {
+            if ch == '%' {
+                let mut var_name = String::new();
+                let mut closed = false;
+                for next_ch in chars.by_ref() {
+                    if next_ch == '%' {
+                        closed = true;
+                        break;
+                    }
+                    var_name.push(next_ch);
+                }
+                if closed && !var_name.is_empty() {
+                    if let Ok(val) = std::env::var(&var_name) {
+                        expanded.push_str(&val);
+                    } else {
+                        expanded.push('%');
+                        expanded.push_str(&var_name);
+                        expanded.push('%');
+                    }
+                } else {
+                    expanded.push('%');
+                    expanded.push_str(&var_name);
+                }
+            } else {
+                expanded.push(ch);
+            }
+        }
+        result = expanded;
+    }
+
+    // 2. Expand Unix-style ${VAR} and $VAR
+    if result.contains('$') {
+        let mut expanded = String::new();
+        let mut chars = result.chars().peekable();
+        while let Some(ch) = chars.next() {
+            if ch == '$' {
+                if chars.peek() == Some(&'{') {
+                    chars.next(); // consume '{'
+                    let mut var_name = String::new();
+                    let mut closed = false;
+                    for next_ch in chars.by_ref() {
+                        if next_ch == '}' {
+                            closed = true;
+                            break;
+                        }
+                        var_name.push(next_ch);
+                    }
+                    if closed && !var_name.is_empty() {
+                        if let Ok(val) = std::env::var(&var_name) {
+                            expanded.push_str(&val);
+                        } else {
+                            expanded.push_str("${");
+                            expanded.push_str(&var_name);
+                            expanded.push('}');
+                        }
+                    } else {
+                        expanded.push_str("${");
+                        expanded.push_str(&var_name);
+                    }
+                } else {
+                    let mut var_name = String::new();
+                    while let Some(&next_ch) = chars.peek() {
+                        if next_ch.is_alphanumeric() || next_ch == '_' {
+                            var_name.push(next_ch);
+                            chars.next();
+                        } else {
+                            break;
+                        }
+                    }
+                    if !var_name.is_empty() {
+                        if let Ok(val) = std::env::var(&var_name) {
+                            expanded.push_str(&val);
+                        } else {
+                            expanded.push('$');
+                            expanded.push_str(&var_name);
+                        }
+                    } else {
+                        expanded.push('$');
+                    }
+                }
+            } else {
+                expanded.push(ch);
+            }
+        }
+        result = expanded;
+    }
+
+    // 3. Expand tilde (~) at start of path
+    if result == "~" || result.starts_with("~/") || result.starts_with("~\\") {
+        let home = dirs::home_dir().or_else(|| {
+            std::env::var("HOME")
+                .or_else(|_| std::env::var("USERPROFILE"))
+                .ok()
+                .map(PathBuf::from)
+        });
+
+        if let Some(home_path) = home {
+            if result == "~" {
+                result = home_path.to_string_lossy().to_string();
+            } else {
+                let rest = &result[2..];
+                let joined = home_path.join(rest);
+                result = joined.to_string_lossy().to_string();
+            }
+        }
+    }
+
+    result
+}
+
 /// Resolves and validates a user-entered path string.
-/// Handles tildes (~), surrounding quotes, and relative paths.
+/// Handles tildes (~), environment variables (%VAR%, $VAR), surrounding quotes, and relative paths.
 pub fn resolve_user_path(input: &str) -> Option<PathBuf> {
     let trimmed = input.trim().trim_matches('"').trim_matches('\'').trim();
     if trimmed.is_empty() {
         return None;
     }
 
-    let expanded = if trimmed.starts_with("~/") || trimmed.starts_with("~\\") || trimmed == "~" {
-        if let Some(home) = dirs::home_dir() {
-            if trimmed == "~" {
-                home
-            } else {
-                home.join(&trimmed[2..])
-            }
-        } else {
-            PathBuf::from(trimmed)
-        }
-    } else {
-        PathBuf::from(trimmed)
-    };
+    let expanded_str = expand_path_str(trimmed);
+    if expanded_str.is_empty() {
+        return None;
+    }
 
-    let full_path = if expanded.is_relative() {
+    let path = PathBuf::from(expanded_str);
+    let full_path = if path.is_relative() {
         if let Ok(cwd) = std::env::current_dir() {
-            cwd.join(expanded)
+            cwd.join(path)
         } else {
-            expanded
+            path
         }
     } else {
-        expanded
+        path
     };
 
     if full_path.is_dir() {
@@ -246,5 +361,38 @@ mod tests {
     fn test_resolve_user_path_nonexistent() {
         let res = resolve_user_path("non_existent_folder_xyz_12345");
         assert_eq!(res, None);
+    }
+
+    #[test]
+    fn test_resolve_user_path_tilde() {
+        if let Some(home) = dirs::home_dir() {
+            let res = resolve_user_path("~");
+            assert_eq!(res, Some(home));
+        }
+    }
+
+    #[test]
+    fn test_resolve_user_path_env_var() {
+        #[cfg(target_os = "windows")]
+        {
+            if let Ok(userprofile) = std::env::var("USERPROFILE") {
+                let res = resolve_user_path("%USERPROFILE%");
+                assert_eq!(res, Some(PathBuf::from(userprofile)));
+            }
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            if let Ok(home) = std::env::var("HOME") {
+                let res = resolve_user_path("$HOME");
+                assert_eq!(res, Some(PathBuf::from(home)));
+            }
+        }
+    }
+
+    #[test]
+    fn test_expand_path_str_tilde_and_env() {
+        let expanded = expand_path_str("~");
+        assert!(!expanded.is_empty());
+        assert_ne!(expanded, "~");
     }
 }

@@ -5,12 +5,13 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Paragraph},
     Frame,
 };
+use std::path::Path;
 use std::sync::atomic::Ordering;
 
 use crate::core::deleter::DeleteMode;
 use crate::core::git::GitStatus;
 use crate::core::size::format_bytes;
-use crate::ui::app::{App, DeletionState, PathPickerState, PathPickerTarget};
+use crate::ui::app::{ActiveTab, App, DeletionState, PathPickerState, PathPickerTarget};
 
 pub fn render_modal(f: &mut Frame, app: &App) {
     if let Some(ref picker) = app.path_picker {
@@ -24,6 +25,7 @@ pub fn render_modal(f: &mut Frame, app: &App) {
 
     let area = match &app.deletion_state {
         DeletionState::Done { errors, .. } if *errors > 0 => centered_rect(72, 65, f.area()),
+        DeletionState::Confirming => centered_rect(70, 55, f.area()),
         _ => centered_rect(65, 50, f.area()),
     };
     f.render_widget(Clear, area); // Clears the background behind the modal
@@ -85,64 +87,109 @@ pub fn render_modal(f: &mut Frame, app: &App) {
 
 fn render_confirm_modal(f: &mut Frame, app: &App, area: Rect) {
     let (selected_count, selected_bytes) = app.get_selected_stats();
-    let selected_items: Vec<_> = app.artifacts.iter().filter(|a| a.is_selected && !a.is_deleted).collect();
-
-    let dirty_count = selected_items
-        .iter()
-        .filter(|a| matches!(a.activity.as_ref().map(|act| &act.git_status), Some(GitStatus::Dirty(_)) | Some(GitStatus::DirtyAndUnpushed { .. })))
-        .count();
-
-    let missing_lock_count = selected_items
-        .iter()
-        .filter(|a| !a.has_lockfile)
-        .count();
+    let is_global_caches = app.active_tab == ActiveTab::GlobalCaches;
 
     let mut lines = Vec::new();
 
     lines.push(Line::from(""));
-    lines.push(Line::from(vec![
-        Span::styled("  You are about to clean ", Style::default().fg(Color::White)),
-        Span::styled(
-            format!("{} targets", selected_count),
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(" to reclaim ", Style::default().fg(Color::White)),
-        Span::styled(
-            format_bytes(selected_bytes),
-            Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(" of disk space.", Style::default().fg(Color::White)),
-    ]));
+    if is_global_caches {
+        let item_desc = if selected_count == 1 {
+            "1 global cache".to_string()
+        } else {
+            format!("{} global caches", selected_count)
+        };
+        lines.push(Line::from(vec![
+            Span::styled("  You are about to clean ", Style::default().fg(Color::White)),
+            Span::styled(
+                item_desc,
+                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(" to reclaim ", Style::default().fg(Color::White)),
+            Span::styled(
+                format_bytes(selected_bytes),
+                Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(" of disk space.", Style::default().fg(Color::White)),
+        ]));
+    } else {
+        lines.push(Line::from(vec![
+            Span::styled("  You are about to clean ", Style::default().fg(Color::White)),
+            Span::styled(
+                format!("{} targets", selected_count),
+                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(" to reclaim ", Style::default().fg(Color::White)),
+            Span::styled(
+                format_bytes(selected_bytes),
+                Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(" of disk space.", Style::default().fg(Color::White)),
+        ]));
+    }
     lines.push(Line::from(""));
 
     // Warnings section
-    if dirty_count > 0 || missing_lock_count > 0 {
+    if is_global_caches {
         lines.push(Line::from(Span::styled(
-            "  ── Safety Warnings ──────────────────────────────────",
+            "  ── Global Cache Warning ────────────────────────────",
             Style::default().fg(Color::Yellow),
         )));
-
-        if dirty_count > 0 {
-            lines.push(Line::from(vec![
-                Span::styled("  ⚠  ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
-                Span::styled(
-                    format!("{} selected project(s) have uncommitted git changes!", dirty_count),
-                    Style::default().fg(Color::Red),
-                ),
-            ]));
-        }
-
-        if missing_lock_count > 0 {
-            lines.push(Line::from(vec![
-                Span::styled("  ⚠  ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-                Span::styled(
-                    format!("{} selected project(s) do not have a lockfile.", missing_lock_count),
-                    Style::default().fg(Color::Yellow),
-                ),
-            ]));
-        }
-
+        lines.push(Line::from(vec![
+            Span::styled("  ⚠  ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "These are system-wide shared tool caches, not project build directories.",
+                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+            ),
+        ]));
+        lines.push(Line::from(vec![
+            Span::styled("     ", Style::default()),
+            Span::styled(
+                "Global tool caches will require re-downloading by their respective package managers.",
+                Style::default().fg(Color::Rgb(255, 200, 100)),
+            ),
+        ]));
         lines.push(Line::from(""));
+    } else {
+        let selected_items: Vec<_> = app.artifacts.iter().filter(|a| a.is_selected && !a.is_deleted).collect();
+
+        let dirty_count = selected_items
+            .iter()
+            .filter(|a| matches!(a.activity.as_ref().map(|act| &act.git_status), Some(GitStatus::Dirty(_)) | Some(GitStatus::DirtyAndUnpushed { .. })))
+            .count();
+
+        let missing_lock_count = selected_items
+            .iter()
+            .filter(|a| !a.has_lockfile)
+            .count();
+
+        if dirty_count > 0 || missing_lock_count > 0 {
+            lines.push(Line::from(Span::styled(
+                "  ── Safety Warnings ──────────────────────────────────",
+                Style::default().fg(Color::Yellow),
+            )));
+
+            if dirty_count > 0 {
+                lines.push(Line::from(vec![
+                    Span::styled("  ⚠  ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+                    Span::styled(
+                        format!("{} selected project(s) have uncommitted git changes!", dirty_count),
+                        Style::default().fg(Color::Red),
+                    ),
+                ]));
+            }
+
+            if missing_lock_count > 0 {
+                lines.push(Line::from(vec![
+                    Span::styled("  ⚠  ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                    Span::styled(
+                        format!("{} selected project(s) do not have a lockfile.", missing_lock_count),
+                        Style::default().fg(Color::Yellow),
+                    ),
+                ]));
+            }
+
+            lines.push(Line::from(""));
+        }
     }
 
     lines.push(Line::from(Span::styled(
@@ -173,11 +220,17 @@ fn render_confirm_modal(f: &mut Frame, app: &App, area: Rect) {
         Span::styled("to cancel", Style::default().fg(Color::DarkGray)),
     ]));
 
+    let title = if is_global_caches {
+        " Clean Confirmation (Global Caches) "
+    } else {
+        " Clean Confirmation "
+    };
+
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
         .title(Span::styled(
-            " Clean Confirmation ",
+            title,
             Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
         ));
 
@@ -208,123 +261,114 @@ fn render_progress_modal(
                 // Indeterminate marquee progress bar for atomic OS move to Recycle Bin
                 let block_size = 8usize;
                 let cycle = bar_width + block_size;
-                let pos = (spinner_tick / 2) % cycle;
-                let mut chars = vec!['░'; bar_width];
-                for i in 0..block_size {
-                    if pos >= i && (pos - i) < bar_width {
-                        chars[pos - i] = '█';
+                let pos = spinner_tick % cycle;
+                let mut bar = String::with_capacity(bar_width);
+                for i in 0..bar_width {
+                    if i + block_size >= pos && i < pos {
+                        bar.push('━');
+                    } else {
+                        bar.push('─');
                     }
                 }
-                let bar_display: String = chars.into_iter().collect();
                 (
-                    "Moving to Trash...".to_string(),
-                    format!("[{}] moving...", bar_display),
-                    Line::from(vec![
-                        Span::styled("  Target size: ", Style::default().fg(Color::DarkGray)),
-                        Span::styled(
-                            format!("{} (moving into Recycle Bin)", format_bytes(total_bytes)),
-                            Style::default().fg(Color::LightCyan).add_modifier(Modifier::BOLD),
-                        ),
-                    ]),
+                    "Moving to Trash",
+                    bar,
+                    "Moving item to OS Trash...".to_string(),
                 )
             } else {
-                let pct = (completed_targets * 100) / total_targets;
-                let filled = (pct * bar_width) / 100;
+                // Multi-target progress percentage
+                let pct = (completed_targets as f64 / total_targets as f64).clamp(0.0, 1.0);
+                let filled = (pct * bar_width as f64).round() as usize;
                 let empty = bar_width.saturating_sub(filled);
-                (
-                    format!("Moving target {} of {} to Trash...", current_target, total_targets),
-                    format!("[{}{}] {}% ({} of {})", "█".repeat(filled), "░".repeat(empty), pct, completed_targets, total_targets),
-                    Line::from(vec![
-                        Span::styled("  Moved to Trash: ", Style::default().fg(Color::DarkGray)),
-                        Span::styled(
-                            format!("{} / {}", format_bytes(freed_bytes), format_bytes(total_bytes)),
-                            Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
-                        ),
-                    ]),
-                )
+                let bar = format!("{}{}", "━".repeat(filled), "─".repeat(empty));
+                let status = format!(
+                    "Moving {}/{} targets... ({})",
+                    completed_targets,
+                    total_targets,
+                    format_bytes(freed_bytes)
+                );
+                ("Moving to Trash", bar, status)
             }
         }
         DeleteMode::Permanent => {
             let pct = if total_bytes > 0 {
-                ((freed_bytes as f64 / total_bytes as f64) * 100.0).min(100.0) as usize
+                (freed_bytes as f64 / total_bytes as f64).clamp(0.0, 1.0)
             } else if total_targets > 0 {
-                (completed_targets * 100) / total_targets
+                (completed_targets as f64 / total_targets as f64).clamp(0.0, 1.0)
             } else {
-                0
+                0.0
             };
-
-            let filled = (pct * bar_width) / 100;
+            let filled = (pct * bar_width as f64).round() as usize;
             let empty = bar_width.saturating_sub(filled);
-            (
-                format!("Cleaning target {} of {}...", current_target, total_targets),
-                format!("[{}{}] {}%", "█".repeat(filled), "░".repeat(empty), pct),
-                Line::from(vec![
-                    Span::styled("  Reclaimed so far: ", Style::default().fg(Color::DarkGray)),
-                    Span::styled(
-                        if total_bytes > 0 {
-                            format!("{} / {}", format_bytes(freed_bytes), format_bytes(total_bytes))
-                        } else {
-                            format_bytes(freed_bytes)
-                        },
-                        Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
-                    ),
-                ]),
-            )
+            let bar = format!("{}{}", "━".repeat(filled), "─".repeat(empty));
+            let status = format!(
+                "Deleting {}/{} targets... ({} / {})",
+                completed_targets,
+                total_targets,
+                format_bytes(freed_bytes),
+                format_bytes(total_bytes)
+            );
+            ("Deleting Permanently", bar, status)
         }
     };
 
-    let display_path = if current_path.len() > 45 {
-        format!("...{}", &current_path[current_path.len().saturating_sub(42)..])
+    let mut lines = Vec::new();
+    lines.push(Line::from(""));
+
+    let action_color = match mode {
+        DeleteMode::Trash => Color::LightCyan,
+        DeleteMode::Permanent => Color::Red,
+    };
+
+    // Header with spinner
+    lines.push(Line::from(vec![
+        Span::styled(format!("  {} ", spinner), Style::default().fg(action_color).add_modifier(Modifier::BOLD)),
+        Span::styled(format!("{}...", action_title), Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+    ]));
+    lines.push(Line::from(""));
+
+    // Progress bar
+    lines.push(Line::from(vec![
+        Span::styled("  [", Style::default().fg(Color::DarkGray)),
+        Span::styled(bar_str, Style::default().fg(action_color).add_modifier(Modifier::BOLD)),
+        Span::styled("] ", Style::default().fg(Color::DarkGray)),
+        Span::styled(status_line, Style::default().fg(Color::LightGreen)),
+    ]));
+    lines.push(Line::from(""));
+
+    // Current item being deleted
+    let short_path = if current_path.len() > 50 {
+        format!("...{}", &current_path[current_path.len() - 47..])
     } else {
         current_path.to_string()
     };
 
-    let cancel_hint_line = if is_cancelling {
-        Line::from(vec![
-            Span::styled("  ⚠  ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-            Span::styled("Cancelling deletion... stopping workers", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-        ])
+    lines.push(Line::from(vec![
+        Span::styled("  Current: ", Style::default().fg(Color::DarkGray)),
+        Span::styled(short_path, Style::default().fg(Color::Yellow)),
+    ]));
+    lines.push(Line::from(""));
+
+    // Footer with cancel instruction
+    if is_cancelling {
+        lines.push(Line::from(Span::styled(
+            "  Cancelling deletion... please wait",
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        )));
     } else {
-        Line::from(vec![
+        lines.push(Line::from(vec![
             Span::styled("  Press ", Style::default().fg(Color::DarkGray)),
             Span::styled("[Esc] ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-            Span::styled("or ", Style::default().fg(Color::DarkGray)),
-            Span::styled("[c] ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-            Span::styled("to cancel", Style::default().fg(Color::DarkGray)),
-        ])
-    };
-
-    let lines = vec![
-        Line::from(""),
-        Line::from(vec![
-            Span::styled(format!("  {} ", spinner), Style::default().fg(Color::Yellow)),
-            Span::styled(
-                action_title,
-                Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
-            ),
-        ]),
-        Line::from(""),
-        Line::from(vec![
-            Span::styled("  Progress: ", Style::default().fg(Color::DarkGray)),
-            Span::styled(bar_str, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-        ]),
-        Line::from(""),
-        status_line,
-        Line::from(""),
-        Line::from(vec![
-            Span::styled("  Current: ", Style::default().fg(Color::DarkGray)),
-            Span::styled(display_path, Style::default().fg(Color::Yellow)),
-        ]),
-        Line::from(""),
-        cancel_hint_line,
-    ];
+            Span::styled("to abort deletion", Style::default().fg(Color::DarkGray)),
+        ]));
+    }
 
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(if is_cancelling { Style::default().fg(Color::Yellow) } else { Style::default().fg(Color::Yellow) })
+        .border_style(Style::default().fg(action_color).add_modifier(Modifier::BOLD))
         .title(Span::styled(
-            if is_cancelling { " Cancelling Deletion... " } else { " Cleaning In Progress " },
-            Style::default().fg(Color::Yellow),
+            format!(" Cleaning in Progress ({}/{}) ", current_target, total_targets),
+            Style::default().fg(action_color).add_modifier(Modifier::BOLD),
         ));
 
     let paragraph = Paragraph::new(lines).block(block);
@@ -339,143 +383,108 @@ fn render_done_modal(
     mode: DeleteMode,
     cancelled: bool,
     error_details: &[String],
-    log_path: Option<&std::path::Path>,
+    log_path: Option<&Path>,
 ) {
-    let mut lines = if cancelled {
-        vec![
-            Line::from(""),
-            Line::from(vec![
-                Span::styled("  ⚠   ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-                Span::styled(
-                    "Deletion Cancelled",
-                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
-                ),
-            ]),
-            Line::from(""),
-            Line::from(vec![
-                Span::styled("  Stopped early by user. Reclaimed ", Style::default().fg(Color::White)),
-                Span::styled(
-                    format_bytes(freed_bytes),
-                    Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(" before cancellation.", Style::default().fg(Color::White)),
-            ]),
-        ]
-    } else {
-        match mode {
-            DeleteMode::Trash => vec![
-                Line::from(""),
-                Line::from(vec![
-                    Span::styled("  ✓   ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
-                    Span::styled(
-                        "Moved to Recycle Bin!",
-                        Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
-                    ),
-                ]),
-                Line::from(""),
-                Line::from(vec![
-                    Span::styled("  Successfully moved ", Style::default().fg(Color::White)),
-                    Span::styled(
-                        format_bytes(freed_bytes),
-                        Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
-                    ),
-                    Span::styled(" to the Recycle Bin.", Style::default().fg(Color::White)),
-                ]),
-                Line::from(""),
-                Line::from(vec![
-                    Span::styled("  ℹ   Storage Note: ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-                    Span::styled(
-                        "Files are in your Recycle Bin and remain recoverable.",
-                        Style::default().fg(Color::White),
-                    ),
-                ]),
-                Line::from(Span::styled(
-                    "    To permanently free up disk space, remember to empty your Recycle Bin.",
-                    Style::default().fg(Color::DarkGray),
-                )),
-            ],
-            DeleteMode::Permanent => vec![
-                Line::from(""),
-                Line::from(vec![
-                    Span::styled("  ✓   ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
-                    Span::styled(
-                        "Cleanup Complete!",
-                        Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
-                    ),
-                ]),
-                Line::from(""),
-                Line::from(vec![
-                    Span::styled("  Successfully reclaimed ", Style::default().fg(Color::White)),
-                    Span::styled(
-                        format_bytes(freed_bytes),
-                        Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
-                    ),
-                    Span::styled(" of disk space.", Style::default().fg(Color::White)),
-                ]),
-            ],
-        }
+    let mut lines = Vec::new();
+    lines.push(Line::from(""));
+
+    let mode_str = match mode {
+        DeleteMode::Trash => "moved to Trash / Recycle Bin",
+        DeleteMode::Permanent => "permanently deleted",
     };
 
-    if errors > 0 {
-        lines.push(Line::from(""));
+    if cancelled {
         lines.push(Line::from(vec![
-            Span::styled("  ⚠  ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+            Span::styled("  ⚠  ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled("Deletion Cancelled by User", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        ]));
+    } else if errors > 0 {
+        lines.push(Line::from(vec![
+            Span::styled("  ⚠  ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled("Clean completed with warnings / errors", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        ]));
+    } else {
+        lines.push(Line::from(vec![
+            Span::styled("  ✓  ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+            Span::styled("Clean completed successfully!", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+        ]));
+    }
+    lines.push(Line::from(""));
+
+    lines.push(Line::from(vec![
+        Span::styled("  Freed: ", Style::default().fg(Color::White)),
+        Span::styled(
+            format_bytes(freed_bytes),
+            Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(format!(" disk space ({})", mode_str), Style::default().fg(Color::White)),
+    ]));
+
+    if errors > 0 {
+        lines.push(Line::from(vec![
+            Span::styled("  Errors: ", Style::default().fg(Color::White)),
             Span::styled(
-                format!("Encountered {} error(s) during deletion:", errors),
+                format!("{} item(s) could not be removed", errors),
                 Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
             ),
         ]));
 
-        for detail in error_details.iter().take(3) {
-            let max_w = (area.width as usize).saturating_sub(12).max(30);
-            let truncated = if detail.len() > max_w {
-                format!("{}...", &detail[..max_w.saturating_sub(3)])
-            } else {
-                detail.clone()
-            };
-            lines.push(Line::from(vec![
-                Span::styled("    • ", Style::default().fg(Color::Yellow)),
-                Span::styled(truncated, Style::default().fg(Color::LightRed)),
-            ]));
-        }
-        if error_details.len() > 3 {
-            lines.push(Line::from(Span::styled(
-                format!("    ... and {} more error(s)", error_details.len() - 3),
-                Style::default().fg(Color::DarkGray),
-            )));
-        }
-
-        if let Some(log_p) = log_path {
+        if !error_details.is_empty() {
             lines.push(Line::from(""));
-            lines.push(Line::from(vec![
-                Span::styled("  Error log: ", Style::default().fg(Color::DarkGray)),
-                Span::styled(
-                    log_p.display().to_string(),
-                    Style::default().fg(Color::Cyan),
-                ),
-            ]));
+            lines.push(Line::from(Span::styled(
+                "  Failed Targets (Files in use or permission denied):",
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            )));
+
+            let max_display_errors = 4;
+            for (i, err) in error_details.iter().take(max_display_errors).enumerate() {
+                let err_str = if err.len() > 64 {
+                    format!("...{}", &err[err.len() - 61..])
+                } else {
+                    err.clone()
+                };
+                lines.push(Line::from(vec![
+                    Span::styled(format!("    {}. ", i + 1), Style::default().fg(Color::DarkGray)),
+                    Span::styled(err_str, Style::default().fg(Color::LightYellow)),
+                ]));
+            }
+
+            if error_details.len() > max_display_errors {
+                lines.push(Line::from(Span::styled(
+                    format!("    ... and {} more error(s)", error_details.len() - max_display_errors),
+                    Style::default().fg(Color::DarkGray),
+                )));
+            }
+
+            if let Some(log) = log_path {
+                lines.push(Line::from(""));
+                lines.push(Line::from(vec![
+                    Span::styled("  Detailed Log: ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                    Span::styled(log.display().to_string(), Style::default().fg(Color::White)),
+                ]));
+            }
         }
     }
 
     lines.push(Line::from(""));
     lines.push(Line::from(vec![
         Span::styled("  Press ", Style::default().fg(Color::DarkGray)),
-        Span::styled("[Enter] ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        Span::styled("[Enter] ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
         Span::styled("or ", Style::default().fg(Color::DarkGray)),
-        Span::styled("[Esc] ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-        Span::styled("to continue", Style::default().fg(Color::DarkGray)),
+        Span::styled("[Esc] ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::styled("to return to table", Style::default().fg(Color::DarkGray)),
     ]));
 
     let border_color = if cancelled {
         Color::Yellow
     } else if errors > 0 {
-        Color::Red
+        Color::Yellow
     } else {
         Color::Green
     };
 
     let title_text = if cancelled {
-        " Deletion Cancelled "
+        " Cleanup Interrupted "
     } else if errors > 0 {
         " Cleanup Finished with Errors "
     } else {
@@ -640,7 +649,7 @@ fn render_custom_path_input(f: &mut Frame, app: &App, picker: &PathPickerState, 
         Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
     )));
     lines.push(Line::from(Span::styled(
-        "  (Supports Windows drives like D:\\projects, relative paths, or ~/code)",
+        "  (Supports %USERPROFILE%, ~, relative paths, or absolute drive paths)",
         Style::default().fg(Color::DarkGray),
     )));
     lines.push(Line::from(""));
@@ -659,6 +668,24 @@ fn render_custom_path_input(f: &mut Frame, app: &App, picker: &PathPickerState, 
             Span::styled("  ⚠  ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
             Span::styled(err, Style::default().fg(Color::Red)),
         ]));
+    } else if !picker.custom_input.trim().is_empty() {
+        if let Some(resolved) = crate::core::paths::resolve_user_path(&picker.custom_input) {
+            lines.push(Line::from(vec![
+                Span::styled("  ✓  ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    format!("Resolves to: {}", resolved.display()),
+                    Style::default().fg(Color::Green),
+                ),
+            ]));
+        } else {
+            lines.push(Line::from(vec![
+                Span::styled("  ℹ  ", Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    "Waiting for valid directory path...",
+                    Style::default().fg(Color::DarkGray),
+                ),
+            ]));
+        }
     } else {
         lines.push(Line::from(""));
     }
