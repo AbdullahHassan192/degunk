@@ -81,5 +81,35 @@ fn test_project_tree_grouping_and_collapsing() {
     let items_expanded_all = app.get_visible_table_items();
     assert_eq!(items_expanded_all.len(), 7); // all 7 visible again!
 
+    // Test Navigation Keys and TableState synchronization
+    app.move_to_top();
+    assert_eq!(app.selected_table_index, 0);
+    assert_eq!(app.table_state.selected(), Some(0));
+
+    // move down
+    app.move_down();
+    assert_eq!(app.selected_table_index, 1);
+    assert_eq!(app.table_state.selected(), Some(1));
+
+    // page_down with step
+    app.page_down(10);
+    assert_eq!(app.selected_table_index, 6); // clamped to items.len() - 1 (7 items total, max idx 6)
+    assert_eq!(app.table_state.selected(), Some(6));
+
+    // page_up
+    app.page_up(2);
+    assert_eq!(app.selected_table_index, 4);
+    assert_eq!(app.table_state.selected(), Some(4));
+
+    // move_to_bottom
+    app.move_to_bottom();
+    assert_eq!(app.selected_table_index, 6);
+    assert_eq!(app.table_state.selected(), Some(6));
+
+    // move_to_top
+    app.move_to_top();
+    assert_eq!(app.selected_table_index, 0);
+    assert_eq!(app.table_state.selected(), Some(0));
+
     let _ = fs::remove_dir_all(&base);
 }

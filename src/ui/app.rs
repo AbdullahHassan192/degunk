@@ -1,4 +1,5 @@
 use crossbeam_channel::Receiver;
+use ratatui::widgets::TableState;
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -56,6 +57,7 @@ pub enum DeletionState {
         freed_bytes: u64,
         errors: usize,
         mode: DeleteMode,
+        cancelled: bool,
     },
 }
 
@@ -201,6 +203,7 @@ pub struct App {
     pub path_picker: Option<PathPickerState>,
     pub artifacts: Vec<DiscoveredArtifact>,
     pub selected_table_index: usize,
+    pub table_state: TableState,
     pub is_scanning: bool,
     pub scanned_dirs_count: usize,
     pub spinner_tick: usize,
@@ -215,6 +218,9 @@ pub struct App {
     pub active_tab: ActiveTab,
     pub global_caches: Vec<GlobalCacheTarget>,
     pub selected_cache_index: usize,
+    pub cache_table_state: TableState,
+
+    pub deletion_cancel: Option<Arc<AtomicBool>>,
 
     scanner_cancel: Option<Arc<AtomicBool>>,
     rx: Option<Receiver<ScanMessage>>,
@@ -244,6 +250,7 @@ impl App {
             path_picker,
             artifacts: Vec::new(),
             selected_table_index: 0,
+            table_state: TableState::default(),
             is_scanning: false,
             scanned_dirs_count: 0,
             spinner_tick: 0,
@@ -257,6 +264,8 @@ impl App {
             active_tab: ActiveTab::Projects,
             global_caches: Vec::new(),
             selected_cache_index: 0,
+            cache_table_state: TableState::default(),
+            deletion_cancel: None,
             scanner_cancel: None,
             rx: None,
             global_cache_cancel: None,
@@ -278,6 +287,10 @@ impl App {
             cancel.store(true, Ordering::Relaxed);
         }
         self.global_caches = detect_global_caches();
+        self.selected_cache_index = 0;
+        self.cache_table_state = TableState::default();
+        self.cache_table_state.select(Some(0));
+
         let (gc_tx, gc_rx) = crossbeam_channel::unbounded();
         let gc_cancel = Arc::new(AtomicBool::new(false));
         self.global_cache_cancel = Some(gc_cancel.clone());
@@ -304,6 +317,8 @@ impl App {
 
         self.artifacts.clear();
         self.selected_table_index = 0;
+        self.table_state = TableState::default();
+        self.table_state.select(Some(0));
         self.is_scanning = true;
         self.scanned_dirs_count = 0;
         self.has_scanned = true;
@@ -322,6 +337,12 @@ impl App {
             self.allowed_ecosystems.clone(),
             self.include_cloud,
         );
+    }
+
+    pub fn cancel_deletion(&mut self) {
+        if let Some(ref cancel) = self.deletion_cancel {
+            cancel.store(true, Ordering::Relaxed);
+        }
     }
 
     pub fn tick(&mut self) {
@@ -432,13 +453,16 @@ impl App {
                         freed_bytes,
                         errors,
                         mode,
+                        cancelled,
                     } => {
                         self.deleting_paths.clear();
                         self.deletion_state = DeletionState::Done {
                             freed_bytes,
                             errors,
                             mode,
+                            cancelled,
                         };
+                        self.deletion_cancel = None;
                         deletion_finished = true;
                     }
                 }
@@ -724,6 +748,7 @@ impl App {
                 } else {
                     self.selected_table_index = count.saturating_sub(1);
                 }
+                self.table_state.select(Some(self.selected_table_index));
             }
             ActiveTab::GlobalCaches => {
                 let count = self.get_visible_global_caches().len();
@@ -734,6 +759,7 @@ impl App {
                 } else {
                     self.selected_cache_index = count.saturating_sub(1);
                 }
+                self.cache_table_state.select(Some(self.selected_cache_index));
             }
         }
     }
@@ -749,6 +775,7 @@ impl App {
                 } else {
                     self.selected_table_index = 0;
                 }
+                self.table_state.select(Some(self.selected_table_index));
             }
             ActiveTab::GlobalCaches => {
                 let count = self.get_visible_global_caches().len();
@@ -758,6 +785,71 @@ impl App {
                     self.selected_cache_index += 1;
                 } else {
                     self.selected_cache_index = 0;
+                }
+                self.cache_table_state.select(Some(self.selected_cache_index));
+            }
+        }
+    }
+
+    pub fn page_up(&mut self, step: usize) {
+        match self.active_tab {
+            ActiveTab::Projects => {
+                self.selected_table_index = self.selected_table_index.saturating_sub(step);
+                self.table_state.select(Some(self.selected_table_index));
+            }
+            ActiveTab::GlobalCaches => {
+                self.selected_cache_index = self.selected_cache_index.saturating_sub(step);
+                self.cache_table_state.select(Some(self.selected_cache_index));
+            }
+        }
+    }
+
+    pub fn page_down(&mut self, step: usize) {
+        match self.active_tab {
+            ActiveTab::Projects => {
+                let count = self.get_visible_table_items().len();
+                if count > 0 {
+                    self.selected_table_index = (self.selected_table_index + step).min(count - 1);
+                    self.table_state.select(Some(self.selected_table_index));
+                }
+            }
+            ActiveTab::GlobalCaches => {
+                let count = self.get_visible_global_caches().len();
+                if count > 0 {
+                    self.selected_cache_index = (self.selected_cache_index + step).min(count - 1);
+                    self.cache_table_state.select(Some(self.selected_cache_index));
+                }
+            }
+        }
+    }
+
+    pub fn move_to_top(&mut self) {
+        match self.active_tab {
+            ActiveTab::Projects => {
+                self.selected_table_index = 0;
+                self.table_state.select(Some(0));
+            }
+            ActiveTab::GlobalCaches => {
+                self.selected_cache_index = 0;
+                self.cache_table_state.select(Some(0));
+            }
+        }
+    }
+
+    pub fn move_to_bottom(&mut self) {
+        match self.active_tab {
+            ActiveTab::Projects => {
+                let count = self.get_visible_table_items().len();
+                if count > 0 {
+                    self.selected_table_index = count - 1;
+                    self.table_state.select(Some(self.selected_table_index));
+                }
+            }
+            ActiveTab::GlobalCaches => {
+                let count = self.get_visible_global_caches().len();
+                if count > 0 {
+                    self.selected_cache_index = count - 1;
+                    self.cache_table_state.select(Some(self.selected_cache_index));
                 }
             }
         }
@@ -869,6 +961,7 @@ impl App {
                         matches!(it, TableItem::GroupHeader { group_key: k, .. } if k == &key)
                     }) {
                         self.selected_table_index = header_idx;
+                        self.table_state.select(Some(header_idx));
                     }
                 }
             }
@@ -934,6 +1027,12 @@ impl App {
     }
 
     pub fn perform_deletion(&mut self, mode: DeleteMode) {
+        if let Some(ref cancel) = self.deletion_cancel {
+            cancel.store(true, Ordering::Relaxed);
+        }
+        let cancel = Arc::new(AtomicBool::new(false));
+        self.deletion_cancel = Some(cancel.clone());
+
         let (tx, rx) = crossbeam_channel::unbounded();
         self.deletion_rx = Some(rx);
 
@@ -977,11 +1076,15 @@ impl App {
             mode,
         };
 
+        let cancel_thread = cancel.clone();
         thread::spawn(move || {
             let mut total_freed_bytes = 0u64;
             let mut errors = 0usize;
 
             for (idx, (path, target_size)) in targets.into_iter().enumerate() {
+                if cancel_thread.load(Ordering::Relaxed) {
+                    break;
+                }
                 let path_display = path.display().to_string();
                 let current_target = idx + 1;
                 let completed_targets = idx;
@@ -1003,6 +1106,7 @@ impl App {
                 let result = delete_path_with_progress(
                     &path,
                     mode,
+                    &cancel_thread,
                     move |incremental_bytes| {
                         current_target_freed += incremental_bytes;
                         let _ = tx_clone.send(DeleteProgressMessage::Progress {
@@ -1017,6 +1121,7 @@ impl App {
                     },
                 );
 
+                let is_cancelled = cancel_thread.load(Ordering::Relaxed);
                 let success = result.is_ok();
                 if success {
                     if current_target_freed == 0 {
@@ -1024,14 +1129,20 @@ impl App {
                     } else {
                         total_freed_bytes += current_target_freed;
                     }
-                } else {
+                } else if !is_cancelled {
                     errors += 1;
+                } else {
+                    total_freed_bytes += current_target_freed;
                 }
 
                 let _ = tx.send(DeleteProgressMessage::TargetFinished {
                     path: path.clone(),
                     success,
                 });
+
+                if is_cancelled {
+                    break;
+                }
 
                 let _ = tx.send(DeleteProgressMessage::Progress {
                     current_target,
@@ -1044,10 +1155,12 @@ impl App {
                 });
             }
 
+            let was_cancelled = cancel_thread.load(Ordering::Relaxed);
             let _ = tx.send(DeleteProgressMessage::Done {
                 freed_bytes: total_freed_bytes,
                 errors,
                 mode,
+                cancelled: was_cancelled,
             });
         });
     }

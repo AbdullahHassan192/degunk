@@ -1,5 +1,6 @@
 use std::fs::{self, File};
 use std::io::Write;
+use std::sync::atomic::AtomicBool;
 
 use degunk::core::deleter::{delete_path, delete_path_with_progress, DeleteMode};
 
@@ -46,9 +47,11 @@ fn test_delete_path_with_progress() {
     }
 
     let mut freed_accum = 0u64;
+    let cancel = AtomicBool::new(false);
     let result = delete_path_with_progress(
         &temp_dir,
         DeleteMode::Permanent,
+        &cancel,
         |bytes| {
             freed_accum += bytes;
         },
@@ -57,4 +60,32 @@ fn test_delete_path_with_progress() {
     assert!(result.is_ok(), "delete_path_with_progress failed: {:?}", result);
     assert!(!temp_dir.exists(), "Target directory must be deleted");
     assert_eq!(freed_accum, expected_bytes, "Freed bytes must match expected file size sum");
+}
+
+#[test]
+fn test_delete_path_cancelled() {
+    let temp_dir = std::env::temp_dir().join("degunk_test_cancel_del");
+    let _ = fs::remove_dir_all(&temp_dir);
+    fs::create_dir_all(&temp_dir).unwrap();
+
+    for i in 0..5 {
+        let file_path = temp_dir.join(format!("file_{}.bin", i));
+        fs::write(&file_path, b"test cancellation").unwrap();
+    }
+
+    // Set cancel to true before execution
+    let cancel = AtomicBool::new(true);
+    let mut freed_accum = 0u64;
+    let result = delete_path_with_progress(
+        &temp_dir,
+        DeleteMode::Permanent,
+        &cancel,
+        |bytes| {
+            freed_accum += bytes;
+        },
+    );
+
+    assert!(result.is_err(), "delete_path_with_progress should abort on cancel");
+    assert_eq!(freed_accum, 0, "No bytes should be freed if cancelled beforehand");
+    let _ = fs::remove_dir_all(&temp_dir);
 }

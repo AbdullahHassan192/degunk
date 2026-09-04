@@ -2,7 +2,7 @@ use ratatui::{
     layout::{Constraint, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Cell, Row, Table},
+    widgets::{Block, Borders, Cell, HighlightSpacing, Row, Table},
     Frame,
 };
 
@@ -19,6 +19,16 @@ pub fn render_table(f: &mut Frame, app: &mut App, area: Rect) {
 
 fn render_projects_table(f: &mut Frame, app: &mut App, area: Rect) {
     let visible_items = app.get_visible_table_items();
+    let num_items = visible_items.len();
+    if num_items == 0 {
+        app.selected_table_index = 0;
+        app.table_state.select(None);
+    } else {
+        if app.selected_table_index >= num_items {
+            app.selected_table_index = num_items - 1;
+        }
+        app.table_state.select(Some(app.selected_table_index));
+    }
 
     let header_cells = [
         Cell::from(Span::styled(" SEL", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
@@ -397,6 +407,7 @@ fn render_projects_table(f: &mut Frame, app: &mut App, area: Rect) {
 
     let table = Table::new(rows, widths)
         .header(header_row)
+        .highlight_spacing(HighlightSpacing::Never)
         .block(
             Block::default()
                 .borders(Borders::ALL)
@@ -407,11 +418,20 @@ fn render_projects_table(f: &mut Frame, app: &mut App, area: Rect) {
                 )),
         );
 
-    f.render_widget(table, area);
+    f.render_stateful_widget(table, area, &mut app.table_state);
 }
 
 fn render_global_cache_table(f: &mut Frame, app: &mut App, area: Rect) {
-    let visible_caches = app.get_visible_global_caches();
+    let num_caches = app.get_visible_global_caches().len();
+    if num_caches == 0 {
+        app.selected_cache_index = 0;
+        app.cache_table_state.select(None);
+    } else {
+        if app.selected_cache_index >= num_caches {
+            app.selected_cache_index = num_caches - 1;
+        }
+        app.cache_table_state.select(Some(app.selected_cache_index));
+    }
 
     let header_cells = [
         Cell::from(Span::styled(" SEL", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
@@ -427,110 +447,113 @@ fn render_global_cache_table(f: &mut Frame, app: &mut App, area: Rect) {
         .style(Style::default().bg(Color::Rgb(25, 30, 42)))
         .height(1);
 
-    let rows: Vec<Row> = visible_caches
-        .iter()
-        .enumerate()
-        .map(|(idx, (_orig_idx, cache))| {
-            let is_selected_in_tui = app.selected_cache_index == idx;
-            let is_deleting = app.deleting_paths.contains(&cache.path);
+    let rows: Vec<Row> = {
+        let visible_caches = app.get_visible_global_caches();
+        visible_caches
+            .into_iter()
+            .enumerate()
+            .map(|(idx, (_orig_idx, cache))| {
+                let is_selected_in_tui = app.selected_cache_index == idx;
+                let is_deleting = app.deleting_paths.contains(&cache.path);
 
-            let checkmark = if cache.is_deleted {
-                Span::styled(" [DEL]", Style::default().fg(Color::DarkGray))
-            } else if is_deleting {
-                Span::styled(" [CLN]", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
-            } else if cache.is_selected {
-                Span::styled(
-                    " [✓] ",
-                    Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
-                )
-            } else {
-                Span::styled(" [ ] ", Style::default().fg(Color::DarkGray))
-            };
+                let checkmark = if cache.is_deleted {
+                    Span::styled(" [DEL]", Style::default().fg(Color::DarkGray))
+                } else if is_deleting {
+                    Span::styled(" [CLN]", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+                } else if cache.is_selected {
+                    Span::styled(
+                        " [✓] ",
+                        Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+                    )
+                } else {
+                    Span::styled(" [ ] ", Style::default().fg(Color::DarkGray))
+                };
 
-            let name_span = if cache.is_deleted {
-                Span::styled(
-                    &cache.name,
-                    Style::default()
-                        .fg(Color::DarkGray)
-                        .add_modifier(Modifier::CROSSED_OUT),
-                )
-            } else if is_deleting {
-                Span::styled(
-                    &cache.name,
-                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
-                )
-            } else {
-                Span::styled(
-                    &cache.name,
-                    Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
-                )
-            };
+                let name_span = if cache.is_deleted {
+                    Span::styled(
+                        cache.name.clone(),
+                        Style::default()
+                            .fg(Color::DarkGray)
+                            .add_modifier(Modifier::CROSSED_OUT),
+                    )
+                } else if is_deleting {
+                    Span::styled(
+                        cache.name.clone(),
+                        Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                    )
+                } else {
+                    Span::styled(
+                        cache.name.clone(),
+                        Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+                    )
+                };
 
-            let eco_style = Style::default()
-                .fg(Color::Black)
-                .bg(Theme::ecosystem_color(cache.ecosystem))
-                .add_modifier(Modifier::BOLD);
-            let eco_span = Span::styled(format!(" {} ", cache.ecosystem.badge()), eco_style);
+                let eco_style = Style::default()
+                    .fg(Color::Black)
+                    .bg(Theme::ecosystem_color(cache.ecosystem))
+                    .add_modifier(Modifier::BOLD);
+                let eco_span = Span::styled(format!(" {} ", cache.ecosystem.badge()), eco_style);
 
-            let path_span = Span::styled(
-                cache.path.display().to_string(),
-                Style::default().fg(if cache.is_deleted { Color::DarkGray } else { Color::LightCyan }),
-            );
-
-            let size_span = if cache.is_deleted {
-                Span::styled("cleaned", Style::default().fg(Color::DarkGray))
-            } else if is_deleting {
-                Span::styled("cleaning...", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
-            } else if cache.size_calculated {
-                Span::styled(
-                    format_bytes(cache.size_bytes),
-                    Style::default()
-                        .fg(Theme::size_color(cache.size_bytes))
-                        .add_modifier(Modifier::BOLD),
-                )
-            } else {
-                Span::styled("calc...", Style::default().fg(Color::DarkGray))
-            };
-
-            let files_span = if cache.is_deleted {
-                Span::styled("─", Style::default().fg(Color::DarkGray))
-            } else if is_deleting {
-                Span::styled("cleaning", Style::default().fg(Color::Yellow))
-            } else if cache.size_calculated {
-                Span::styled(
-                    format!("{} files", cache.file_count),
-                    Style::default().fg(Color::DarkGray),
-                )
-            } else {
-                Span::styled("─", Style::default().fg(Color::DarkGray))
-            };
-
-            let hint_span = Span::styled(
-                &cache.clean_hint,
-                Style::default().fg(if cache.is_deleted { Color::DarkGray } else { Color::Yellow }),
-            );
-
-            let mut row = Row::new(vec![
-                Cell::from(checkmark),
-                Cell::from(name_span),
-                Cell::from(eco_span),
-                Cell::from(path_span),
-                Cell::from(size_span),
-                Cell::from(files_span),
-                Cell::from(hint_span),
-            ]);
-
-            if is_selected_in_tui {
-                row = row.style(
-                    Style::default()
-                        .bg(Color::Rgb(40, 50, 75))
-                        .add_modifier(Modifier::BOLD),
+                let path_span = Span::styled(
+                    cache.path.display().to_string(),
+                    Style::default().fg(if cache.is_deleted { Color::DarkGray } else { Color::LightCyan }),
                 );
-            }
 
-            row
-        })
-        .collect();
+                let size_span = if cache.is_deleted {
+                    Span::styled("cleaned", Style::default().fg(Color::DarkGray))
+                } else if is_deleting {
+                    Span::styled("cleaning...", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+                } else if cache.size_calculated {
+                    Span::styled(
+                        format_bytes(cache.size_bytes),
+                        Style::default()
+                            .fg(Theme::size_color(cache.size_bytes))
+                            .add_modifier(Modifier::BOLD),
+                    )
+                } else {
+                    Span::styled("calc...", Style::default().fg(Color::DarkGray))
+                };
+
+                let files_span = if cache.is_deleted {
+                    Span::styled("─", Style::default().fg(Color::DarkGray))
+                } else if is_deleting {
+                    Span::styled("cleaning", Style::default().fg(Color::Yellow))
+                } else if cache.size_calculated {
+                    Span::styled(
+                        format!("{} files", cache.file_count),
+                        Style::default().fg(Color::DarkGray),
+                    )
+                } else {
+                    Span::styled("─", Style::default().fg(Color::DarkGray))
+                };
+
+                let hint_span = Span::styled(
+                    cache.clean_hint.clone(),
+                    Style::default().fg(if cache.is_deleted { Color::DarkGray } else { Color::Yellow }),
+                );
+
+                let mut row = Row::new(vec![
+                    Cell::from(checkmark),
+                    Cell::from(name_span),
+                    Cell::from(eco_span),
+                    Cell::from(path_span),
+                    Cell::from(size_span),
+                    Cell::from(files_span),
+                    Cell::from(hint_span),
+                ]);
+
+                if is_selected_in_tui {
+                    row = row.style(
+                        Style::default()
+                            .bg(Color::Rgb(40, 50, 75))
+                            .add_modifier(Modifier::BOLD),
+                    );
+                }
+
+                row
+            })
+            .collect()
+    };
 
     let widths = [
         Constraint::Length(8),
@@ -551,6 +574,7 @@ fn render_global_cache_table(f: &mut Frame, app: &mut App, area: Rect) {
 
     let table = Table::new(rows, widths)
         .header(header_row)
+        .highlight_spacing(HighlightSpacing::Never)
         .block(
             Block::default()
                 .borders(Borders::ALL)
@@ -561,5 +585,5 @@ fn render_global_cache_table(f: &mut Frame, app: &mut App, area: Rect) {
                 )),
         );
 
-    f.render_widget(table, area);
+    f.render_stateful_widget(table, area, &mut app.cache_table_state);
 }

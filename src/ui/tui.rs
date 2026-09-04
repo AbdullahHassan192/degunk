@@ -166,6 +166,20 @@ fn handle_path_picker_key(app: &mut App, code: KeyCode) {
                     picker.selected_index = 0;
                 }
             }
+            KeyCode::PageUp => {
+                picker.selected_index = picker.selected_index.saturating_sub(5);
+            }
+            KeyCode::PageDown => {
+                if !picker.items.is_empty() {
+                    picker.selected_index = (picker.selected_index + 5).min(picker.items.len() - 1);
+                }
+            }
+            KeyCode::Home => {
+                picker.selected_index = 0;
+            }
+            KeyCode::End => {
+                picker.selected_index = picker.items.len().saturating_sub(1);
+            }
             KeyCode::Char(c @ '1'..='9') => {
                 if let Some(idx) = picker.items.iter().position(|it| it.shortcut == Some(c)) {
                     picker.selected_index = idx;
@@ -227,6 +241,7 @@ fn handle_picker_select(app: &mut App) {
 fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
     // Check for Ctrl+C
     if modifiers.contains(KeyModifiers::CONTROL) && code == KeyCode::Char('c') {
+        app.cancel_deletion();
         app.should_quit = true;
         return;
     }
@@ -256,7 +271,12 @@ fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
             }
             _ => {}
         },
-        DeletionState::Deleting { .. } => {}
+        DeletionState::Deleting { .. } => match code {
+            KeyCode::Esc | KeyCode::Char('c') | KeyCode::Char('C') => {
+                app.cancel_deletion();
+            }
+            _ => {}
+        },
         DeletionState::Idle => {
             if app.is_searching {
                 match code {
@@ -299,6 +319,18 @@ fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
                     }
                     KeyCode::Down | KeyCode::Char('j') => {
                         app.move_down();
+                    }
+                    KeyCode::PageUp => {
+                        app.page_up(10);
+                    }
+                    KeyCode::PageDown => {
+                        app.page_down(10);
+                    }
+                    KeyCode::Home | KeyCode::Char('g') => {
+                        app.move_to_top();
+                    }
+                    KeyCode::End | KeyCode::Char('G') => {
+                        app.move_to_bottom();
                     }
                     KeyCode::Char(' ') => {
                         app.toggle_selection();

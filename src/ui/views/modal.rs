@@ -5,6 +5,7 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Paragraph},
     Frame,
 };
+use std::sync::atomic::Ordering;
 
 use crate::core::deleter::DeleteMode;
 use crate::core::git::GitStatus;
@@ -37,6 +38,11 @@ pub fn render_modal(f: &mut Frame, app: &App) {
             total_bytes,
             mode,
         } => {
+            let is_cancelling = app
+                .deletion_cancel
+                .as_ref()
+                .map_or(false, |c| c.load(Ordering::Relaxed));
+
             render_progress_modal(
                 f,
                 area,
@@ -48,14 +54,16 @@ pub fn render_modal(f: &mut Frame, app: &App) {
                 *freed_bytes,
                 *total_bytes,
                 *mode,
+                is_cancelling,
             );
         }
         DeletionState::Done {
             freed_bytes,
             errors,
             mode,
+            cancelled,
         } => {
-            render_done_modal(f, area, *freed_bytes, *errors, *mode);
+            render_done_modal(f, area, *freed_bytes, *errors, *mode, *cancelled);
         }
         DeletionState::Idle => {}
     }
@@ -174,6 +182,7 @@ fn render_progress_modal(
     freed_bytes: u64,
     total_bytes: u64,
     mode: DeleteMode,
+    is_cancelling: bool,
 ) {
     let bar_width = 30usize;
     let spinner_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -256,6 +265,21 @@ fn render_progress_modal(
         current_path.to_string()
     };
 
+    let cancel_hint_line = if is_cancelling {
+        Line::from(vec![
+            Span::styled("  ⚠  ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled("Cancelling deletion... stopping workers", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        ])
+    } else {
+        Line::from(vec![
+            Span::styled("  Press ", Style::default().fg(Color::DarkGray)),
+            Span::styled("[Esc] ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled("or ", Style::default().fg(Color::DarkGray)),
+            Span::styled("[c] ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled("to cancel", Style::default().fg(Color::DarkGray)),
+        ])
+    };
+
     let lines = vec![
         Line::from(""),
         Line::from(vec![
@@ -277,69 +301,103 @@ fn render_progress_modal(
             Span::styled("  Current: ", Style::default().fg(Color::DarkGray)),
             Span::styled(display_path, Style::default().fg(Color::Yellow)),
         ]),
+        Line::from(""),
+        cancel_hint_line,
     ];
 
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Yellow))
-        .title(Span::styled(" Cleaning In Progress ", Style::default().fg(Color::Yellow)));
+        .border_style(if is_cancelling { Style::default().fg(Color::Yellow) } else { Style::default().fg(Color::Yellow) })
+        .title(Span::styled(
+            if is_cancelling { " Cancelling Deletion... " } else { " Cleaning In Progress " },
+            Style::default().fg(Color::Yellow),
+        ));
 
     let paragraph = Paragraph::new(lines).block(block);
     f.render_widget(paragraph, area);
 }
 
-fn render_done_modal(f: &mut Frame, area: Rect, freed_bytes: u64, errors: usize, mode: DeleteMode) {
-    let mut lines = match mode {
-        DeleteMode::Trash => vec![
+fn render_done_modal(
+    f: &mut Frame,
+    area: Rect,
+    freed_bytes: u64,
+    errors: usize,
+    mode: DeleteMode,
+    cancelled: bool,
+) {
+    let mut lines = if cancelled {
+        vec![
             Line::from(""),
             Line::from(vec![
-                Span::styled("  ✓   ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                Span::styled("  ⚠   ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
                 Span::styled(
-                    "Moved to Recycle Bin!",
-                    Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+                    "Deletion Cancelled",
+                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
                 ),
             ]),
             Line::from(""),
             Line::from(vec![
-                Span::styled("  Successfully moved ", Style::default().fg(Color::White)),
-                Span::styled(
-                    format_bytes(freed_bytes),
-                    Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(" to the Recycle Bin.", Style::default().fg(Color::White)),
-            ]),
-            Line::from(""),
-            Line::from(vec![
-                Span::styled("  ℹ   Storage Note: ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-                Span::styled(
-                    "Files are in your Recycle Bin and remain recoverable.",
-                    Style::default().fg(Color::White),
-                ),
-            ]),
-            Line::from(Span::styled(
-                "    To permanently free up disk space, remember to empty your Recycle Bin.",
-                Style::default().fg(Color::DarkGray),
-            )),
-        ],
-        DeleteMode::Permanent => vec![
-            Line::from(""),
-            Line::from(vec![
-                Span::styled("  ✓   ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
-                Span::styled(
-                    "Cleanup Complete!",
-                    Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
-                ),
-            ]),
-            Line::from(""),
-            Line::from(vec![
-                Span::styled("  Successfully reclaimed ", Style::default().fg(Color::White)),
+                Span::styled("  Stopped early by user. Reclaimed ", Style::default().fg(Color::White)),
                 Span::styled(
                     format_bytes(freed_bytes),
                     Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
                 ),
-                Span::styled(" of disk space.", Style::default().fg(Color::White)),
+                Span::styled(" before cancellation.", Style::default().fg(Color::White)),
             ]),
-        ],
+        ]
+    } else {
+        match mode {
+            DeleteMode::Trash => vec![
+                Line::from(""),
+                Line::from(vec![
+                    Span::styled("  ✓   ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                    Span::styled(
+                        "Moved to Recycle Bin!",
+                        Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+                    ),
+                ]),
+                Line::from(""),
+                Line::from(vec![
+                    Span::styled("  Successfully moved ", Style::default().fg(Color::White)),
+                    Span::styled(
+                        format_bytes(freed_bytes),
+                        Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(" to the Recycle Bin.", Style::default().fg(Color::White)),
+                ]),
+                Line::from(""),
+                Line::from(vec![
+                    Span::styled("  ℹ   Storage Note: ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                    Span::styled(
+                        "Files are in your Recycle Bin and remain recoverable.",
+                        Style::default().fg(Color::White),
+                    ),
+                ]),
+                Line::from(Span::styled(
+                    "    To permanently free up disk space, remember to empty your Recycle Bin.",
+                    Style::default().fg(Color::DarkGray),
+                )),
+            ],
+            DeleteMode::Permanent => vec![
+                Line::from(""),
+                Line::from(vec![
+                    Span::styled("  ✓   ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                    Span::styled(
+                        "Cleanup Complete!",
+                        Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+                    ),
+                ]),
+                Line::from(""),
+                Line::from(vec![
+                    Span::styled("  Successfully reclaimed ", Style::default().fg(Color::White)),
+                    Span::styled(
+                        format_bytes(freed_bytes),
+                        Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(" of disk space.", Style::default().fg(Color::White)),
+                ]),
+            ],
+        }
     };
 
     if errors > 0 {
@@ -359,10 +417,26 @@ fn render_done_modal(f: &mut Frame, area: Rect, freed_bytes: u64, errors: usize,
         Span::styled("to continue", Style::default().fg(Color::DarkGray)),
     ]));
 
+    let border_color = if cancelled {
+        Color::Yellow
+    } else if errors > 0 {
+        Color::Red
+    } else {
+        Color::Green
+    };
+
+    let title_text = if cancelled {
+        " Deletion Cancelled "
+    } else if errors > 0 {
+        " Cleanup Finished with Errors "
+    } else {
+        " Done "
+    };
+
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Green))
-        .title(Span::styled(" Done ", Style::default().fg(Color::Green)));
+        .border_style(Style::default().fg(border_color))
+        .title(Span::styled(title_text, Style::default().fg(border_color)));
 
     let paragraph = Paragraph::new(lines).block(block);
     f.render_widget(paragraph, area);

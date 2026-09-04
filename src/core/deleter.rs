@@ -1,7 +1,7 @@
 use rayon::prelude::*;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -29,6 +29,7 @@ pub enum DeleteProgressMessage {
         freed_bytes: u64,
         errors: usize,
         mode: DeleteMode,
+        cancelled: bool,
     },
 }
 
@@ -42,28 +43,36 @@ pub struct DeleteResult {
 
 /// Deletes an artifact directory using the chosen mode (Trash or Permanent).
 pub fn delete_path(path: &Path, mode: DeleteMode) -> Result<(), String> {
-    delete_path_with_progress(path, mode, |_| {})
+    delete_path_with_progress(path, mode, &AtomicBool::new(false), |_| {})
 }
 
 /// Deletes an artifact directory using the chosen mode and reports incremental freed bytes.
 pub fn delete_path_with_progress<F>(
     path: &Path,
     mode: DeleteMode,
+    cancel: &AtomicBool,
     mut on_bytes_freed: F,
 ) -> Result<(), String>
 where
     F: FnMut(u64) + Send,
 {
+    if cancel.load(Ordering::Relaxed) {
+        return Err("Deletion cancelled".to_string());
+    }
+
     if !path.exists() {
         return Ok(());
     }
 
     match mode {
         DeleteMode::Trash => {
+            if cancel.load(Ordering::Relaxed) {
+                return Err("Deletion cancelled".to_string());
+            }
             trash::delete(path).map_err(|e| format!("Failed to move to Trash: {}", e))
         }
         DeleteMode::Permanent => {
-            fast_permanent_remove_with_progress(path, &mut on_bytes_freed)
+            fast_permanent_remove_with_progress(path, &mut on_bytes_freed, cancel)
         }
     }
 }
@@ -74,10 +83,15 @@ where
 fn fast_permanent_remove_with_progress<F>(
     path: &Path,
     on_bytes_freed: &mut F,
+    cancel: &AtomicBool,
 ) -> Result<(), String>
 where
     F: FnMut(u64) + Send,
 {
+    if cancel.load(Ordering::Relaxed) {
+        return Err("Deletion cancelled".to_string());
+    }
+
     if let Some(parent) = path.parent() {
         let temp_name = format!(
             ".degunk_tmp_{}",
@@ -90,7 +104,7 @@ where
 
         // Try fast rename first
         if fs::rename(path, &temp_path).is_ok() {
-            if let Err(e) = remove_dir_all_accelerated(&temp_path, on_bytes_freed) {
+            if let Err(e) = remove_dir_all_accelerated(&temp_path, on_bytes_freed, cancel) {
                 // If deletion fails, attempt to restore the original path
                 let _ = fs::rename(&temp_path, path);
                 return Err(format!(
@@ -105,9 +119,12 @@ where
 
     // Direct removal fallback
     if path.is_dir() {
-        remove_dir_all_accelerated(path, on_bytes_freed)
+        remove_dir_all_accelerated(path, on_bytes_freed, cancel)
             .map_err(|e| format!("Failed to delete directory {}: {}", path.display(), e))
     } else {
+        if cancel.load(Ordering::Relaxed) {
+            return Err("Deletion cancelled".to_string());
+        }
         let size = fs::metadata(path).map(|m| m.len()).unwrap_or(0);
         remove_file_resilient(path)
             .map(|()| on_bytes_freed(size))
@@ -116,7 +133,11 @@ where
 }
 
 /// Deletes directory contents in parallel using Rayon and streams freed byte progress.
-fn remove_dir_all_accelerated<F>(path: &Path, on_bytes_freed: &mut F) -> std::io::Result<()>
+fn remove_dir_all_accelerated<F>(
+    path: &Path,
+    on_bytes_freed: &mut F,
+    cancel: &AtomicBool,
+) -> std::io::Result<()>
 where
     F: FnMut(u64) + Send,
 {
@@ -129,6 +150,12 @@ where
         .into_iter()
         .filter_map(|e| e.ok())
     {
+        if cancel.load(Ordering::Relaxed) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Interrupted,
+                "Deletion cancelled",
+            ));
+        }
         let p = entry.path().to_path_buf();
         if p == path {
             continue;
@@ -143,9 +170,18 @@ where
 
     // Delete files in parallel chunks of 1000 and report incremental progress
     for chunk in files.chunks(1000) {
+        if cancel.load(Ordering::Relaxed) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Interrupted,
+                "Deletion cancelled",
+            ));
+        }
         let chunk_freed = AtomicU64::new(0);
 
         chunk.par_iter().for_each(|(file_path, size)| {
+            if cancel.load(Ordering::Relaxed) {
+                return;
+            }
             if remove_file_resilient(file_path).is_ok() {
                 chunk_freed.fetch_add(*size, Ordering::Relaxed);
             }
@@ -155,12 +191,39 @@ where
         if freed > 0 {
             on_bytes_freed(freed);
         }
+
+        if cancel.load(Ordering::Relaxed) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Interrupted,
+                "Deletion cancelled",
+            ));
+        }
+    }
+
+    if cancel.load(Ordering::Relaxed) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Interrupted,
+            "Deletion cancelled",
+        ));
     }
 
     // Remove directories in bottom-up order (deepest first)
     dirs.sort_by_key(|d| std::cmp::Reverse(d.components().count()));
     for dir in dirs {
+        if cancel.load(Ordering::Relaxed) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Interrupted,
+                "Deletion cancelled",
+            ));
+        }
         let _ = fs::remove_dir(&dir);
+    }
+
+    if cancel.load(Ordering::Relaxed) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Interrupted,
+            "Deletion cancelled",
+        ));
     }
 
     // Finally remove the target directory root
