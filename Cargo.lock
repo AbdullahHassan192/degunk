@@ -80,22 +80,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b588b76d00fde79687d7646a9b5bdf3cc0f655e0bbd080335a95d7e96f3587da"
 
 [[package]]
-name = "blackhole"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "clap",
- "crossbeam-channel",
- "crossterm",
- "ratatui",
- "rayon",
- "serde",
- "serde_json",
- "trash",
- "walkdir",
-]
-
-[[package]]
 name = "bumpalo"
 version = "3.20.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -303,6 +287,22 @@ dependencies = [
  "darling_core",
  "quote",
  "syn 3.0.4",
+]
+
+[[package]]
+name = "degunk"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "clap",
+ "crossbeam-channel",
+ "crossterm",
+ "ratatui",
+ "rayon",
+ "serde",
+ "serde_json",
+ "trash",
+ "walkdir",
 ]
 
 [[package]]

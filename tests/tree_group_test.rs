@@ -3,12 +3,12 @@ use std::io::Write;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-use blackhole::core::scanner::{ScanMessage, Scanner};
-use blackhole::ui::app::{App, TableItem};
+use degunk::core::scanner::{ScanMessage, Scanner};
+use degunk::ui::app::{App, TableItem};
 
 #[test]
 fn test_project_tree_grouping_and_collapsing() {
-    let base = std::env::temp_dir().join("bh_tree_test_env");
+    let base = std::env::temp_dir().join("degunk_tree_test_env");
     let _ = fs::remove_dir_all(&base);
     fs::create_dir_all(&base).unwrap();
 

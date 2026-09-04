@@ -65,7 +65,7 @@ mod tests {
 
     #[test]
     fn test_calculate_dir_size() {
-        let temp_dir = std::env::temp_dir().join("bh_test_size_calc");
+        let temp_dir = std::env::temp_dir().join("degunk_test_size_calc");
         let _ = std::fs::remove_dir_all(&temp_dir);
         std::fs::create_dir_all(&temp_dir).unwrap();
 

@@ -1,6 +1,6 @@
-use blackhole::cli::{run_cli, Cli};
-use blackhole::ui::{run_tui, App};
 use clap::Parser;
+use degunk::cli::{run_cli, Cli};
+use degunk::ui::{run_tui, App};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();

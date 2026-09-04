@@ -1,11 +1,11 @@
 use std::fs::{self, File};
 use std::io::Write;
 
-use blackhole::core::deleter::{delete_path, DeleteMode};
+use degunk::core::deleter::{delete_path, DeleteMode};
 
 #[test]
 fn test_delete_readonly_directory() {
-    let temp_dir = std::env::temp_dir().join("bh_test_readonly_del");
+    let temp_dir = std::env::temp_dir().join("degunk_test_readonly_del");
     let _ = fs::remove_dir_all(&temp_dir);
     fs::create_dir_all(&temp_dir).unwrap();
 

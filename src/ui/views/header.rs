@@ -13,7 +13,7 @@ pub fn render_header(f: &mut Frame, app: &App, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Length(22), // Title & Version
+            Constraint::Length(18), // Title & Version
             Constraint::Min(44),    // View Tabs
             Constraint::Length(38), // Space Stats & Selection
         ])
@@ -21,10 +21,9 @@ pub fn render_header(f: &mut Frame, app: &App, area: Rect) {
 
     // Left: Title
     let title_line = Line::from(vec![
-        Span::styled(" ✦ ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
         Span::styled(
-            "BLACK HOLE",
-            Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+            " DEGUNK",
+            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
         ),
         Span::styled(" v0.1.0 ", Style::default().fg(Color::DarkGray)),
     ]);

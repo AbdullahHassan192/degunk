@@ -3,8 +3,8 @@ use std::io::Write;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-use blackhole::core::ecosystem::Ecosystem;
-use blackhole::core::global_cache::{
+use degunk::core::ecosystem::Ecosystem;
+use degunk::core::global_cache::{
     detect_global_caches, start_global_cache_scan, GlobalCacheMessage, GlobalCacheTarget,
 };
 
@@ -19,7 +19,7 @@ fn test_detect_global_caches_basic() {
 
 #[test]
 fn test_global_cache_scan_sizing() {
-    let temp_cache_dir = std::env::temp_dir().join("bh_test_fake_global_cache");
+    let temp_cache_dir = std::env::temp_dir().join("degunk_test_fake_global_cache");
     let _ = fs::remove_dir_all(&temp_cache_dir);
     fs::create_dir_all(&temp_cache_dir).unwrap();
 
@@ -76,7 +76,7 @@ fn test_global_cache_scan_sizing() {
 
 #[test]
 fn test_global_cache_sorting_and_filtering() {
-    use blackhole::ui::app::{ActiveTab, App, SortMode};
+    use degunk::ui::app::{ActiveTab, App, SortMode};
     use std::path::PathBuf;
 
     let mut app = App::new(vec![], None, false);

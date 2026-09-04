@@ -3,12 +3,12 @@ use std::io::Write;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-use blackhole::core::ecosystem::Ecosystem;
-use blackhole::core::scanner::{ScanMessage, Scanner};
+use degunk::core::ecosystem::Ecosystem;
+use degunk::core::scanner::{ScanMessage, Scanner};
 
 #[test]
 fn test_multi_ecosystem_scanning_and_filtering() {
-    let base = std::env::temp_dir().join("bh_multi_test_env");
+    let base = std::env::temp_dir().join("degunk_multi_test_env");
     let _ = fs::remove_dir_all(&base);
     fs::create_dir_all(&base).unwrap();
 

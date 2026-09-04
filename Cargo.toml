@@ -1,9 +1,14 @@
 [package]
-name = "blackhole"
+name = "degunk"
 version = "0.1.0"
 edition = "2021"
-authors = ["Abdullah"]
+authors = ["Abdullah Hassan <abdullahch192@gmail.com>"]
 description = "A fast, cross-platform dependency and build artifact cleaner"
+license = "MIT"
+repository = "https://github.com/AbdullahHassan192/degunk"
+homepage = "https://github.com/AbdullahHassan192/degunk"
+keywords = ["cleanup", "disk-space", "developer-tools", "tui", "cli"]
+categories = ["command-line-utilities", "development-tools"]
 
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }

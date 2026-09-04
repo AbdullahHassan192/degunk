@@ -51,7 +51,7 @@ pub fn delete_path(path: &Path, mode: DeleteMode) -> Result<(), String> {
 fn fast_permanent_remove(path: &Path) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         let temp_name = format!(
-            ".bh_tmp_{}",
+            ".degunk_tmp_{}",
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap_or_default()

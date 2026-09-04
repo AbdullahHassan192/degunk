@@ -3,12 +3,12 @@ use std::io::Write;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-use blackhole::core::ecosystem::Ecosystem;
-use blackhole::core::scanner::{ScanMessage, Scanner};
+use degunk::core::ecosystem::Ecosystem;
+use degunk::core::scanner::{ScanMessage, Scanner};
 
 #[test]
 fn test_scanner_detects_node_modules() {
-    let temp_dir = std::env::temp_dir().join("bh_test_node_proj");
+    let temp_dir = std::env::temp_dir().join("degunk_test_node_proj");
     let _ = fs::remove_dir_all(&temp_dir);
     fs::create_dir_all(&temp_dir).unwrap();
 
@@ -46,7 +46,7 @@ fn test_scanner_detects_node_modules() {
 
 #[test]
 fn test_scanner_detects_rust_target() {
-    let temp_dir = std::env::temp_dir().join("bh_test_rust_proj");
+    let temp_dir = std::env::temp_dir().join("degunk_test_rust_proj");
     let _ = fs::remove_dir_all(&temp_dir);
     fs::create_dir_all(&temp_dir).unwrap();
 
@@ -84,7 +84,7 @@ fn test_scanner_detects_rust_target() {
 
 #[test]
 fn test_scanner_skips_onedrive_folders() {
-    let temp_dir = std::env::temp_dir().join("bh_test_onedrive_skip");
+    let temp_dir = std::env::temp_dir().join("degunk_test_onedrive_skip");
     let _ = fs::remove_dir_all(&temp_dir);
     fs::create_dir_all(&temp_dir).unwrap();
 

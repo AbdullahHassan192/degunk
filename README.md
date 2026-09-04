@@ -1,8 +1,37 @@
-# ✦ Black Hole
+# Degunk
 
 > A fast, cross-platform dependency and build artifact cleaner built with Rust and Ratatui.
 
-Developers routinely lose tens of gigabytes of disk space to forgotten `node_modules`, Python `.venv`, Rust `target/`, and compiler caches across old clone directories and dormant projects. **Black Hole** scans workspaces recursively, calculates recoverable disk space in parallel, evaluates project inactivity and Git safety, and lets you wipe or trash artifacts with confidence.
+[![CI](https://github.com/AbdullahHassan192/degunk/actions/workflows/ci.yml/badge.svg)](https://github.com/AbdullahHassan192/degunk/actions/workflows/ci.yml)
+[![Release](https://github.com/AbdullahHassan192/degunk/actions/workflows/release.yml/badge.svg)](https://github.com/AbdullahHassan192/degunk/actions/workflows/release.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
+Developers routinely lose tens of gigabytes of disk space to forgotten `node_modules`, Python `.venv`, Rust `target/`, and compiler caches across old clone directories and dormant projects. **Degunk** scans workspaces recursively, calculates recoverable disk space in parallel, evaluates project inactivity and Git safety, and lets you wipe or trash artifacts with confidence.
+
+---
+
+## Installation
+
+Standalone executables are built for Windows, macOS, and Linux. No Rust toolchain or build environment is needed.
+
+### Windows (PowerShell)
+```powershell
+irm https://raw.githubusercontent.com/AbdullahHassan192/degunk/master/scripts/install.ps1 | iex
+```
+
+### macOS & Linux (Terminal)
+```bash
+curl -fsSL https://raw.githubusercontent.com/AbdullahHassan192/degunk/master/scripts/install.sh | sh
+```
+
+### From Source (Rust Developers)
+```bash
+# Direct from GitHub repository
+cargo install --git https://github.com/AbdullahHassan192/degunk
+
+# Or from crates.io
+cargo install degunk
+```
 
 ---
 
@@ -24,7 +53,7 @@ Developers routinely lose tens of gigabytes of disk space to forgotten `node_mod
 ## Codebase Architecture
 
 ```
-blackhole/
+degunk/
 ├── Cargo.toml                # Dependencies and release build profiles
 ├── README.md                 # Project documentation
 ├── src/
@@ -127,37 +156,37 @@ blackhole/
 ### Launch Interactive TUI
 ```powershell
 # Scan current directory
-blackhole
+degunk
 
 # Scan custom directories
-blackhole D:\projects C:\Users\YourName\dev
+degunk D:\projects C:\Users\YourName\dev
 ```
 
 ### Non-Interactive Scan
 ```powershell
 # Print table of found artifacts
-blackhole --scan .
+degunk --scan .
 
 # Output formatted JSON (for scripts and automation)
-blackhole --scan . --json
+degunk --scan . --json
 
 # Filter by ecosystem
-blackhole --scan . --types node,python,rust
+degunk --scan . --types node,python,rust
 
 # Only show targets inactive for more than 60 days
-blackhole --scan . --older-than 60
+degunk --scan . --older-than 60
 ```
 
 ### Automated Cleaning
 ```powershell
 # Preview what would be cleaned without touching files
-blackhole --clean-all --dry-run .
+degunk --clean-all --dry-run .
 
 # Clean all artifacts older than 90 days, moving them to Trash
-blackhole --clean-all --trash --older-than 90 .
+degunk --clean-all --trash --older-than 90 .
 
 # Permanently delete all Rust target directories
-blackhole --clean-all --permanent --types rust .
+degunk --clean-all --permanent --types rust .
 ```
 
 ---
@@ -174,4 +203,4 @@ cargo test
 # Build optimized release binary
 cargo build --release
 ```
-The compiled release executable will be available at `target/release/blackhole.exe`.
+The compiled release executable will be available at `target/release/degunk.exe`.

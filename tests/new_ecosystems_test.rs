@@ -3,12 +3,12 @@ use std::io::Write;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-use blackhole::core::ecosystem::Ecosystem;
-use blackhole::core::scanner::{ScanMessage, Scanner};
+use degunk::core::ecosystem::Ecosystem;
+use degunk::core::scanner::{ScanMessage, Scanner};
 
 #[test]
 fn test_detect_zig_project() {
-    let base = std::env::temp_dir().join("bh_test_zig_proj");
+    let base = std::env::temp_dir().join("degunk_test_zig_proj");
     let _ = fs::remove_dir_all(&base);
     fs::create_dir_all(base.join("zig-cache")).unwrap();
     fs::create_dir_all(base.join("zig-out")).unwrap();
@@ -37,7 +37,7 @@ fn test_detect_zig_project() {
 
 #[test]
 fn test_detect_godot_project() {
-    let base = std::env::temp_dir().join("bh_test_godot_proj");
+    let base = std::env::temp_dir().join("degunk_test_godot_proj");
     let _ = fs::remove_dir_all(&base);
     fs::create_dir_all(base.join(".godot")).unwrap();
 
@@ -66,7 +66,7 @@ fn test_detect_godot_project() {
 
 #[test]
 fn test_detect_unity_and_coverage() {
-    let base = std::env::temp_dir().join("bh_test_unity_cov");
+    let base = std::env::temp_dir().join("degunk_test_unity_cov");
     let _ = fs::remove_dir_all(&base);
 
     // Unity project

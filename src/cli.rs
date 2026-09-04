@@ -9,10 +9,10 @@ use crate::core::size::format_bytes;
 
 #[derive(Parser, Debug)]
 #[command(
-    name = "blackhole",
+    name = "degunk",
     version = "0.1.0",
     about = "A fast, cross-platform dependency and build artifact cleaner",
-    long_about = "Black Hole scans your projects for heavy, re-downloadable dependency and build directories\n(node_modules, .venv, target, etc.) and lets you reclaim disk space safely."
+    long_about = "Degunk scans your projects for heavy, re-downloadable dependency and build directories\n(node_modules, .venv, target, etc.) and lets you reclaim disk space safely."
 )]
 pub struct Cli {
     /// Paths to scan (defaults to current directory)
@@ -253,7 +253,7 @@ pub fn run_cli(cli: &Cli) {
     if !global_caches.is_empty() {
         let total_cache_bytes: u64 = global_caches.iter().map(|c| c.size_bytes).sum();
         println!("{:=<105}", "");
-        println!("✦ Global Developer Tool Caches (Auto-Detected)");
+        println!("Global Developer Tool Caches (Auto-Detected)");
         println!("{:-<105}", "");
         println!(
             "{:<28} {:<10} {:<12} {:<12} {}",

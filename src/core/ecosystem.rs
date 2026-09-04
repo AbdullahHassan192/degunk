@@ -374,7 +374,7 @@ mod tests {
 
     #[test]
     fn test_match_rule_node() {
-        let temp_dir = std::env::temp_dir().join("bh_test_match_node");
+        let temp_dir = std::env::temp_dir().join("degunk_test_match_node");
         let _ = std::fs::create_dir_all(&temp_dir);
         let _ = File::create(temp_dir.join("package.json"));
 
