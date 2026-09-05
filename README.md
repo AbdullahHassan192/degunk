@@ -4,15 +4,29 @@ Developers lose tens of gigabytes of disk space to old `node_modules`, `venv`, `
 
 ---
 
-## Features
+## Installation
 
-* **Interactive path launcher**: Running `degunk` opens a path picker with your common dev folders (`~/Projects`, `~/dev`), drives, and a custom path input with paste support.
-* **Project tree view**: Monorepos, mobile apps, and fullstack projects group multiple build targets under their project root. You can collapse and expand groups with `Enter` or `e`.
-* **Deep ecosystem coverage**: Scans 28 ecosystems including Node.js, Python, Rust, Go, Java/Kotlin, .NET, C/C++, Swift/iOS, Android/NDK, React Native/Expo, Unreal Engine, Embedded/PlatformIO, Flutter, Zig, Godot, Unity, Ruby, Scala, Haskell, OCaml, Terraform, R, Elm, Clojure, and Julia.
-* **Global developer caches**: Press `Tab` to see central caches like Cargo package checkouts, Go module caches, Playwright browser builds, npm, pnpm, pip, Gradle daemons, ccache, sccache, and local AI model weights (Ollama, LM Studio, HuggingFace).
-* **Git activity context**: Inspects each project's Git history to display days since your last commit, uncommitted local changes, and unpushed commits before you delete anything.
-* **Search filters**: Filter by ecosystem, size, age, or safety state using tokens like `eco:node`, `size:>500m`, `days:>60`, `git:clean`, or `locked:yes`.
-* **Safe deletion**: Moves files to your OS Trash or Recycle Bin by default, with an option for direct deletion. Handles read-only file locks on Windows and Unix cleanly.
+### macOS and Linux
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/AbdullahHassan192/degunk/main/scripts/install.sh | sh
+```
+
+### Windows (PowerShell)
+
+```powershell
+irm https://raw.githubusercontent.com/AbdullahHassan192/degunk/main/scripts/install.ps1 | iex
+```
+
+### Cargo
+
+```bash
+cargo install degunk
+```
+
+### Prebuilt binaries
+
+Precompiled standalone binaries for Windows (x86_64), macOS (Apple Silicon and Intel), and Linux (x86_64 and ARM64) are available on the [GitHub Releases](https://github.com/AbdullahHassan192/degunk/releases) page.
 
 ---
 
@@ -39,6 +53,18 @@ degunk . --older-than 60
 # Filter by minimum artifact size
 degunk . --min-size 100MB
 ```
+
+---
+
+## Features
+
+* **Interactive path launcher**: Running `degunk` opens a path picker with your common dev folders (`~/Projects`, `~/dev`), drives, and a custom path input with paste support.
+* **Project tree view**: Monorepos, mobile apps, and fullstack projects group multiple build targets under their project root. You can collapse and expand groups with `Enter` or `e`.
+* **Deep ecosystem coverage**: Scans 28 ecosystems including Node.js, Python, Rust, Go, Java/Kotlin, .NET, C/C++, Swift/iOS, Android/NDK, React Native/Expo, Unreal Engine, Embedded/PlatformIO, Flutter, Zig, Godot, Unity, Ruby, Scala, Haskell, OCaml, Terraform, R, Elm, Clojure, and Julia.
+* **Global developer caches**: Press `Tab` to see central caches like Cargo package checkouts, Go module caches, Playwright browser builds, npm, pnpm, pip, Gradle daemons, ccache, sccache, and local AI model weights (Ollama, LM Studio, HuggingFace).
+* **Git activity context**: Inspects each project's Git history to display days since your last commit, uncommitted local changes, and unpushed commits before you delete anything.
+* **Search filters**: Filter by ecosystem, size, age, or safety state using tokens like `eco:node`, `size:>500m`, `days:>60`, `git:clean`, or `locked:yes`.
+* **Safe deletion**: Moves files to your OS Trash or Recycle Bin by default, with an option for direct deletion. Handles read-only file locks on Windows and Unix cleanly.
 
 ---
 
