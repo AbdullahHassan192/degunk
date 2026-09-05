@@ -430,6 +430,14 @@ fn test_search_query_token_filters() {
     assert!(matches_artifact_query(&art_tf, "eco:tf size:>200m git:dirty"));
     assert!(!matches_artifact_query(&art_tf, "eco:tf size:>300m"));
 
+    // Age / Days filter prefix
+    assert!(matches_artifact_query(&art_tf, "days:>30"));
+    assert!(!matches_artifact_query(&art_tf, "days:>90"));
+    assert!(matches_artifact_query(&art_ruby, "age:>5"));
+    assert!(!matches_artifact_query(&art_ruby, "age:>15"));
+    assert!(matches_artifact_query(&art_ue, "older-than:>2"));
+    assert!(!matches_artifact_query(&art_ue, "older-than:>10"));
+
     // Global cache query
     let gc = GlobalCacheTarget {
         id: 1,

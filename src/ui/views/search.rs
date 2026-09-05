@@ -9,12 +9,22 @@ use ratatui::{
 use crate::ui::app::App;
 
 pub fn render_search_bar(f: &mut Frame, app: &App, area: Rect) {
+    let hint = if app.is_searching {
+        " (press Enter or Esc to finish)"
+    } else {
+        " (press / to edit, Esc to clear)"
+    };
+
     let search_line = Line::from(vec![
         Span::styled(" / Search: ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
         Span::styled(&app.search_query, Style::default().fg(Color::White)),
-        Span::styled("█", Style::default().fg(Color::Yellow)),
+        if app.is_searching {
+            Span::styled("█", Style::default().fg(Color::Yellow))
+        } else {
+            Span::raw("")
+        },
         Span::styled(
-            " (press Enter or Esc to finish)",
+            hint,
             Style::default().fg(Color::DarkGray),
         ),
     ]);

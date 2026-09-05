@@ -3,11 +3,11 @@ name = "degunk"
 version = "0.1.0"
 edition = "2021"
 authors = ["Abdullah Hassan <abdullahch192@gmail.com>"]
-description = "A fast, cross-platform dependency and build artifact cleaner"
+description = "A fast, interactive dependency and build artifact cleaner"
 license = "MIT"
 repository = "https://github.com/AbdullahHassan192/degunk"
 homepage = "https://github.com/AbdullahHassan192/degunk"
-keywords = ["cleanup", "disk-space", "developer-tools", "tui", "cli"]
+keywords = ["cleanup", "disk-space", "developer-tools", "tui"]
 categories = ["command-line-utilities", "development-tools"]
 
 [dependencies]
@@ -19,7 +19,6 @@ rayon = "1.10"
 trash = "5.2"
 chrono = "0.4"
 serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
 crossbeam-channel = "0.5"
 dirs = "6.0"
 

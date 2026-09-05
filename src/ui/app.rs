@@ -1283,6 +1283,18 @@ pub fn matches_artifact_query(a: &DiscoveredArtifact, q: &str) -> bool {
                     return false;
                 }
             }
+        } else if let Some(age_spec) = lower_token.strip_prefix("age:>").or_else(|| lower_token.strip_prefix("days:>")).or_else(|| lower_token.strip_prefix("older-than:>")) {
+            if let Ok(days) = age_spec.parse::<u32>() {
+                if a.days_inactive < days {
+                    return false;
+                }
+            }
+        } else if let Some(age_spec) = lower_token.strip_prefix("age:<").or_else(|| lower_token.strip_prefix("days:<")) {
+            if let Ok(days) = age_spec.parse::<u32>() {
+                if a.days_inactive > days {
+                    return false;
+                }
+            }
         } else if lower_token == "locked:yes" || lower_token == "locked:true" {
             if !a.has_lockfile {
                 return false;

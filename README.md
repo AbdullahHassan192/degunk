@@ -11,14 +11,14 @@ Developers lose tens of gigabytes of disk space to old `node_modules`, `venv`, `
 * **Deep ecosystem coverage**: Scans 28 ecosystems including Node.js, Python, Rust, Go, Java/Kotlin, .NET, C/C++, Swift/iOS, Android/NDK, React Native/Expo, Unreal Engine, Embedded/PlatformIO, Flutter, Zig, Godot, Unity, Ruby, Scala, Haskell, OCaml, Terraform, R, Elm, Clojure, and Julia.
 * **Global developer caches**: Press `Tab` to see central caches like Cargo package checkouts, Go module caches, Playwright browser builds, npm, pnpm, pip, Gradle daemons, ccache, sccache, and local AI model weights (Ollama, LM Studio, HuggingFace).
 * **Git activity context**: Inspects each project's Git history to display days since your last commit, uncommitted local changes, and unpushed commits before you delete anything.
-* **Search filters**: Filter by ecosystem, size, or safety state using tokens like `eco:node`, `eco:unreal`, `size:>500m`, `git:clean`, or `locked:yes`.
+* **Search filters**: Filter by ecosystem, size, age, or safety state using tokens like `eco:node`, `size:>500m`, `days:>60`, `git:clean`, or `locked:yes`.
 * **Safe deletion**: Moves files to your OS Trash or Recycle Bin by default, with an option for direct deletion. Handles read-only file locks on Windows and Unix cleanly.
 
 ---
 
 ## Quick start
 
-### Launch the TUI
+`degunk` is an interactive TUI dashboard. You can launch it directly or pass initial paths and filter arguments:
 
 ```bash
 # Open the interactive path picker
@@ -29,25 +29,15 @@ degunk .
 
 # Scan specific project folders or drives
 degunk D:\projects ~/code
-```
 
-### CLI and scripting
+# Filter by ecosystem when launching
+degunk . --types node,rust,python
 
-```bash
-# Print a summary table without launching the full TUI
-degunk --scan .
+# Filter by inactivity age (days)
+degunk . --older-than 60
 
-# Output machine-readable JSON
-degunk --scan . --json
-
-# Filter by ecosystem
-degunk --scan . --types node,rust,python
-
-# Only show targets untouched for over 60 days
-degunk --scan . --older-than 60
-
-# Clean old artifacts into the Trash without manual confirmation
-degunk --clean-all --trash --older-than 90 .
+# Filter by minimum artifact size
+degunk . --min-size 100MB
 ```
 
 ---
@@ -74,10 +64,11 @@ Type `/` to search names, folder names, and paths. You can also mix in filter to
 
 * `eco:rust`, `eco:node`, `eco:python`, `eco:unreal`, `eco:android`, `eco:rn`, `eco:r`
 * `size:>100m`, `size:>1g`, `size:<50m`
+* `days:>60`, `age:>30`
 * `locked:yes`, `locked:no`
 * `git:clean`, `git:dirty`
 
-Example: `/eco:python size:>100m git:clean`
+Example: `/eco:python size:>100m days:>60 git:clean`
 
 ---
 

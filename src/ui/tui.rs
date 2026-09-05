@@ -56,7 +56,8 @@ fn event_loop(
         terminal.draw(|f| {
             let total_area = f.area();
 
-            let constraints = if app.is_searching {
+            let show_search = app.is_searching || !app.search_query.is_empty();
+            let constraints = if show_search {
                 vec![
                     Constraint::Length(3), // Header
                     Constraint::Length(3), // Search bar
@@ -76,7 +77,7 @@ fn event_loop(
                 .constraints(constraints)
                 .split(total_area);
 
-            if app.is_searching {
+            if show_search {
                 render_header(f, app, chunks[0]);
                 render_search_bar(f, app, chunks[1]);
                 render_table(f, app, chunks[2]);
