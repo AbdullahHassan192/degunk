@@ -17,6 +17,7 @@ use crate::core::global_cache::{
 use crate::core::paths::detect_suggested_paths;
 use crate::core::scanner::{DiscoveredArtifact, ScanMessage, Scanner};
 use crate::core::size::parse_size_str;
+use crate::ui::views::intro::IntroState;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ActiveTab {
@@ -246,6 +247,7 @@ pub struct App {
     pub selected_cache_index: usize,
     pub cache_table_state: TableState,
 
+    pub intro_state: Option<IntroState>,
     pub deletion_cancel: Option<Arc<AtomicBool>>,
 
     scanner_cancel: Option<Arc<AtomicBool>>,
@@ -291,6 +293,7 @@ impl App {
             global_caches: Vec::new(),
             selected_cache_index: 0,
             cache_table_state: TableState::default(),
+            intro_state: None,
             deletion_cancel: None,
             scanner_cancel: None,
             rx: None,
@@ -322,6 +325,15 @@ impl App {
         self.global_cache_cancel = Some(gc_cancel.clone());
         self.global_cache_rx = Some(gc_rx);
         start_global_cache_scan(self.global_caches.clone(), gc_tx, gc_cancel);
+    }
+
+    pub fn with_intro(mut self, enabled: bool) -> Self {
+        if enabled {
+            self.intro_state = Some(IntroState::new());
+        } else {
+            self.intro_state = None;
+        }
+        self
     }
 
     pub fn open_path_picker(&mut self) {

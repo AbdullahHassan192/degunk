@@ -11,7 +11,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         cli.parse_ecosystems(),
         cli.include_cloud,
         has_explicit_paths,
-    );
+    )
+    .with_intro(cli.show_intro());
 
     let mut filter_tokens = Vec::new();
     if let Some(ref size) = cli.min_size {

@@ -16,6 +16,7 @@ use crate::ui::app::{App, DeletionState};
 use crate::ui::views::{
     footer::render_footer,
     header::render_header,
+    intro::render_intro,
     modal::render_modal,
     search::render_search_bar,
     table::render_table,
@@ -53,7 +54,18 @@ fn event_loop(
     while !app.should_quit {
         app.tick();
 
+        if let Some(ref intro) = app.intro_state {
+            if intro.is_finished() {
+                app.intro_state = None;
+            }
+        }
+
         terminal.draw(|f| {
+            if let Some(ref intro) = app.intro_state {
+                render_intro(f, intro);
+                return;
+            }
+
             let total_area = f.area();
 
             let show_search = app.is_searching || !app.search_query.is_empty();
@@ -92,16 +104,28 @@ fn event_loop(
             render_modal(f, app);
         })?;
 
+        let poll_duration = if app.intro_state.is_some() {
+            Duration::from_millis(25)
+        } else {
+            Duration::from_millis(50)
+        };
+
         // Poll events
-        if event::poll(Duration::from_millis(50))? {
+        if event::poll(poll_duration)? {
             match event::read()? {
                 Event::Key(key) => {
                     if key.kind == KeyEventKind::Press {
-                        handle_key(app, key.code, key.modifiers);
+                        if app.intro_state.is_some() {
+                            app.intro_state = None;
+                        } else {
+                            handle_key(app, key.code, key.modifiers);
+                        }
                     }
                 }
                 Event::Paste(text) => {
-                    handle_paste(app, &text);
+                    if app.intro_state.is_none() {
+                        handle_paste(app, &text);
+                    }
                 }
                 _ => {}
             }

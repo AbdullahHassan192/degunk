@@ -1,9 +1,32 @@
-/target
-**/*.rs.bk
+# Build output
+target/
 *.pdb
+
+# Rustfmt & compiler scratch
+**/*.rs.bk
+*.orig
+*.profraw
+*.profdata
+
+# Logs and environment
+*.log
+.env
+*.env.local
+
+# IDEs and editors
 .idea/
 .vscode/
+*.code-workspace
+*.swp
+*.swo
+*~
+
+# AI agent caches and local configs
+.agents/
+.gemini/
+
+# Operating system files
 .DS_Store
 Thumbs.db
-*.log
-
+ehthumbs.db
+[Dd]esktop.ini

@@ -31,6 +31,10 @@ pub struct Cli {
     /// Include cloud storage folders (OneDrive, Google Drive, Dropbox, iCloud)
     #[arg(long = "include-cloud")]
     pub include_cloud: bool,
+
+    /// Disable startup intro animation
+    #[arg(long = "no-intro")]
+    pub no_intro: bool,
 }
 
 impl Cli {
@@ -49,6 +53,10 @@ impl Cli {
         } else {
             0
         }
+    }
+
+    pub fn show_intro(&self) -> bool {
+        !self.no_intro
     }
 
     pub fn target_paths(&self) -> Vec<PathBuf> {
@@ -71,6 +79,7 @@ mod tests {
             cli.paths,
             vec![PathBuf::from("path1"), PathBuf::from("path2")]
         );
+        assert!(cli.show_intro());
     }
 
     #[test]
@@ -88,6 +97,15 @@ mod tests {
         assert_eq!(cli.min_size.as_deref(), Some("50MB"));
         assert_eq!(cli.paths, vec![PathBuf::from("D:\\projects")]);
         assert_eq!(cli.parse_min_size_bytes(), 50 * 1024 * 1024);
+    }
+
+    #[test]
+    fn test_cli_no_intro_flag() {
+        let cli_default = Cli::parse_from(["degunk"]);
+        assert!(cli_default.show_intro());
+
+        let cli_no_intro = Cli::parse_from(["degunk", "--no-intro"]);
+        assert!(!cli_no_intro.show_intro());
     }
 
     #[test]
