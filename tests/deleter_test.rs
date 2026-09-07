@@ -220,3 +220,38 @@ fn test_delete_path_cancelled_mid_flight() {
 
     let _ = fs::remove_dir_all(&temp_dir);
 }
+
+#[test]
+fn test_delete_single_file_permanent() {
+    let temp_dir = std::env::temp_dir().join("degunk_test_single_file");
+    let _ = fs::remove_dir_all(&temp_dir);
+    fs::create_dir_all(&temp_dir).unwrap();
+
+    let file_path = temp_dir.join("isolated_file.txt");
+    fs::write(&file_path, b"single file content").unwrap();
+
+    let result = delete_path(&file_path, DeleteMode::Permanent);
+    assert!(result.is_ok(), "delete_path failed on single file: {:?}", result);
+    assert!(!file_path.exists());
+
+    let _ = fs::remove_dir_all(&temp_dir);
+}
+
+#[test]
+fn test_delete_path_trash_mode() {
+    let temp_dir = std::env::temp_dir().join("degunk_test_trash_mode");
+    let _ = fs::remove_dir_all(&temp_dir);
+    fs::create_dir_all(&temp_dir).unwrap();
+
+    let file_path = temp_dir.join("trash_me.txt");
+    fs::write(&file_path, b"recycle bin candidate").unwrap();
+
+    let result = delete_path(&temp_dir, DeleteMode::Trash);
+    if result.is_ok() {
+        assert!(!temp_dir.exists());
+    } else {
+        let err = result.unwrap_err();
+        assert_eq!(err.target_path, temp_dir);
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+}

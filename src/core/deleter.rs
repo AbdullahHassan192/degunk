@@ -316,6 +316,20 @@ where
         return Err(DeletionTargetError::new(path.to_path_buf(), "Deletion cancelled"));
     }
 
+    // Direct single file removal
+    if !path.is_dir() {
+        let size = fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+        return remove_file_resilient(path)
+            .map(|()| on_bytes_freed(size))
+            .map_err(|e| {
+                DeletionTargetError::with_file_errors(
+                    path.to_path_buf(),
+                    "Failed to delete file",
+                    vec![(path.to_path_buf(), e.to_string())],
+                )
+            });
+    }
+
     if let Some(parent) = path.parent() {
         let temp_name = format!(
             ".degunk_tmp_{}",
@@ -348,30 +362,14 @@ where
     }
 
     // Direct removal fallback
-    if path.is_dir() {
-        remove_dir_all_accelerated(path, on_bytes_freed, cancel)
-            .map_err(|file_errs| {
-                DeletionTargetError::with_file_errors(
-                    path.to_path_buf(),
-                    "Failed to delete directory (some files could not be removed)",
-                    file_errs,
-                )
-            })
-    } else {
-        if cancel.load(Ordering::Relaxed) {
-            return Err(DeletionTargetError::new(path.to_path_buf(), "Deletion cancelled"));
-        }
-        let size = fs::metadata(path).map(|m| m.len()).unwrap_or(0);
-        remove_file_resilient(path)
-            .map(|()| on_bytes_freed(size))
-            .map_err(|e| {
-                DeletionTargetError::with_file_errors(
-                    path.to_path_buf(),
-                    "Failed to delete file",
-                    vec![(path.to_path_buf(), e.to_string())],
-                )
-            })
-    }
+    remove_dir_all_accelerated(path, on_bytes_freed, cancel)
+        .map_err(|file_errs| {
+            DeletionTargetError::with_file_errors(
+                path.to_path_buf(),
+                "Failed to delete directory (some files could not be removed)",
+                file_errs,
+            )
+        })
 }
 
 /// Deletes directory contents in parallel using Rayon and streams freed byte progress.
