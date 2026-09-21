@@ -1323,6 +1323,14 @@ pub fn matches_artifact_query(a: &DiscoveredArtifact, q: &str) -> bool {
             if a.git_clean {
                 return false;
             }
+        } else if lower_token == "safe:yes" || lower_token == "safe:true" || lower_token == "safety:safe" {
+            if !a.git_clean || !a.has_lockfile {
+                return false;
+            }
+        } else if lower_token == "safe:no" || lower_token == "safe:false" || lower_token == "safety:warn" {
+            if a.git_clean && a.has_lockfile {
+                return false;
+            }
         } else {
             let matches = a.root_project_name.to_lowercase().contains(&lower_token)
                 || a.project_name.to_lowercase().contains(&lower_token)

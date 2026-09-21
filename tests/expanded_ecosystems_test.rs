@@ -426,6 +426,14 @@ fn test_search_query_token_filters() {
     assert!(!matches_artifact_query(&art_tf, "git:clean"));
     assert!(matches_artifact_query(&art_tf, "git:dirty"));
 
+    // Safety filter
+    assert!(matches_artifact_query(&art_ruby, "safe:yes"));
+    assert!(!matches_artifact_query(&art_ruby, "safe:no"));
+    assert!(!matches_artifact_query(&art_tf, "safe:yes"));
+    assert!(matches_artifact_query(&art_tf, "safe:no"));
+    assert!(!matches_artifact_query(&art_ue, "safe:yes"));
+    assert!(matches_artifact_query(&art_ue, "safe:no"));
+
     // Multi-token combo
     assert!(matches_artifact_query(&art_tf, "eco:tf size:>200m git:dirty"));
     assert!(!matches_artifact_query(&art_tf, "eco:tf size:>300m"));

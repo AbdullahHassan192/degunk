@@ -20,6 +20,53 @@ pub fn render_table(f: &mut Frame, app: &mut App, area: Rect) {
     }
 }
 
+fn render_safety_badge(
+    activity: Option<&crate::core::git::ProjectActivity>,
+    has_lockfile: bool,
+    is_deleted: bool,
+    is_deleting: bool,
+) -> Span<'static> {
+    if is_deleted {
+        return Span::styled("─ Cleaned", Style::default().fg(Color::DarkGray));
+    }
+    if is_deleting {
+        return Span::styled(
+            "Cleaning...",
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+        );
+    }
+
+    if let Some(act) = activity {
+        if act.is_git {
+            match &act.git_status {
+                crate::core::git::GitStatus::Dirty(_)
+                | crate::core::git::GitStatus::DirtyAndUnpushed { .. } => {
+                    return Span::styled(
+                        "● Dirty worktree",
+                        Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                    );
+                }
+                crate::core::git::GitStatus::Unpushed(_) => {
+                    return Span::styled(
+                        "↑ Unpushed",
+                        Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                    );
+                }
+                _ => {}
+            }
+        }
+    }
+
+    if !has_lockfile {
+        return Span::styled("⚠ No lockfile", Style::default().fg(Color::Yellow));
+    }
+
+    Span::styled(
+        "✓ Safe to clean",
+        Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+    )
+}
+
 fn render_projects_table(f: &mut Frame, app: &mut App, area: Rect) {
     let visible_items = app.get_visible_table_items();
     let num_items = visible_items.len();
@@ -41,7 +88,7 @@ fn render_projects_table(f: &mut Frame, app: &mut App, area: Rect) {
         Cell::from(Span::styled("SIZE", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
         Cell::from(Span::styled("INACTIVITY", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
         Cell::from(Span::styled("GIT STATUS", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
-        Cell::from(Span::styled("LOCKFILE", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
+        Cell::from(Span::styled("SAFETY", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
     ];
 
     let header_row = Row::new(header_cells)
@@ -243,12 +290,13 @@ fn render_projects_table(f: &mut Frame, app: &mut App, area: Rect) {
                         Span::styled("─", Style::default().fg(Color::DarkGray))
                     };
 
-                    // Lockfile status
-                    let lockfile_span = if *all_locked {
-                        Span::styled("✓ Locked", Style::default().fg(Color::Green))
-                    } else {
-                        Span::styled("⚠  Missing", Style::default().fg(Color::Yellow))
-                    };
+                    // Safety status
+                    let safety_span = render_safety_badge(
+                        activity.as_ref(),
+                        *all_locked,
+                        *all_deleted,
+                        *is_deleting,
+                    );
 
                     let mut row = Row::new(vec![
                         Cell::from(checkmark),
@@ -258,7 +306,7 @@ fn render_projects_table(f: &mut Frame, app: &mut App, area: Rect) {
                         Cell::from(size_span),
                         Cell::from(inactivity_span),
                         Cell::from(git_span),
-                        Cell::from(lockfile_span),
+                        Cell::from(safety_span),
                     ]);
 
                     if is_selected_in_tui {
@@ -285,6 +333,7 @@ fn render_projects_table(f: &mut Frame, app: &mut App, area: Rect) {
                     is_deleted,
                     is_deleting,
                     is_last,
+                    activity,
                     ..
                 } => {
                     // Checkmark indented
@@ -352,16 +401,17 @@ fn render_projects_table(f: &mut Frame, app: &mut App, area: Rect) {
                         Span::styled("calc...", Style::default().fg(Color::DarkGray))
                     };
 
-                    // Inactivity / Git / Lockfile for child
+                    // Inactivity / Git / Safety for child
                     let inactivity_span =
                         Span::styled("─", Style::default().fg(Color::DarkGray));
                     let git_span = Span::styled("─", Style::default().fg(Color::DarkGray));
 
-                    let lockfile_span = if *has_lockfile {
-                        Span::styled("✓ Locked", Style::default().fg(Color::Green))
-                    } else {
-                        Span::styled("⚠  Missing", Style::default().fg(Color::Yellow))
-                    };
+                    let safety_span = render_safety_badge(
+                        activity.as_ref(),
+                        *has_lockfile,
+                        *is_deleted,
+                        *is_deleting,
+                    );
 
                     let mut row = Row::new(vec![
                         Cell::from(checkmark),
@@ -371,7 +421,7 @@ fn render_projects_table(f: &mut Frame, app: &mut App, area: Rect) {
                         Cell::from(size_span),
                         Cell::from(inactivity_span),
                         Cell::from(git_span),
-                        Cell::from(lockfile_span),
+                        Cell::from(safety_span),
                     ]);
 
                     if is_selected_in_tui {
@@ -393,12 +443,12 @@ fn render_projects_table(f: &mut Frame, app: &mut App, area: Rect) {
     let widths = [
         Constraint::Length(8),
         Constraint::Percentage(28),
+        Constraint::Length(10),
+        Constraint::Length(14),
         Constraint::Length(11),
-        Constraint::Length(14),
-        Constraint::Length(12),
-        Constraint::Length(14),
-        Constraint::Length(16),
-        Constraint::Length(12),
+        Constraint::Length(13),
+        Constraint::Length(15),
+        Constraint::Length(18),
     ];
 
     let pos_indicator = if num_items > 0 {

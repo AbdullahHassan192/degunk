@@ -10,8 +10,12 @@ Developers lose tens of gigabytes of disk space to old `node_modules`, `venv`, `
 
 When you run `degunk`, it groups build artifacts by project and surfaces safety information before you delete anything:
 
-* **Lockfile (`✓ Locked` vs `⚠ Missing`)**: Shows whether the project has a dependency lockfile (`package-lock.json`, `Cargo.lock`, `poetry.lock`, etc.). `✓ Locked` means you can safely delete the build folder and recreate the exact same environment later with your package manager. `⚠ Missing` warns you that reinstalling might resolve newer dependency versions.
-* **Git status (`✓ Clean` vs `⚠ Dirty`)**: `✓ Clean` means all changes are committed. `⚠ Dirty` warns you that uncommitted work exists in that repository, so you can check on your changes before clearing build outputs.
+* **Safety status (`✓ Safe to clean`, `● Dirty worktree`, `↑ Unpushed`, `⚠ No lockfile`)**: Combines Git working tree state and dependency lockfile verification into an instant recommendation:
+  * `✓ Safe to clean`: The Git repository is clean (or not tracked by Git) and a dependency lockfile is present. Build artifacts can be safely reclaimed and restored identically anytime.
+  * `● Dirty worktree`: Uncommitted changes exist in the working tree. Cleaning is discouraged while active work is in flight.
+  * `↑ Unpushed`: Local commits have not been pushed to the remote repository.
+  * `⚠ No lockfile`: Missing lockfile (`package-lock.json`, `Cargo.lock`, `poetry.lock`, etc.). Reinstalling dependencies later could resolve newer, untested versions.
+* **Git status (`✓ Clean`, `● N dirty`, `↑ N unpushed`)**: Shows the exact repository state, detailing modified file counts and commits ahead of origin.
 * **Inactivity**: Measures how many days have passed since your last Git commit to that repo (for example, `Active today`, `90d ago`, `210d ago`). This helps you spot forgotten projects that are safe to clean.
 * **Projects vs Global caches**: Press `Tab` to switch between project build directories (`node_modules`, `target`, `.venv`) and central developer caches (`Cargo` registries, `Go` modules, `npm` cache, Playwright browsers, and local Ollama model weights).
 * **Trash vs Permanent delete**: Files move to your operating system's Recycle Bin or Trash by default, so you can restore anything you delete by accident.
@@ -93,6 +97,7 @@ Type `/` to search names, folder names, and paths. You can also mix in filter to
 * `eco:rust`, `eco:node`, `eco:python`, `eco:unreal`, `eco:android`, `eco:rn`, `eco:r`
 * `size:>100m`, `size:>1g`, `size:<50m`
 * `days:>60`, `age:>30`
+* `safe:yes`, `safe:no`
 * `locked:yes`, `locked:no`
 * `git:clean`, `git:dirty`
 
