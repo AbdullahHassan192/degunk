@@ -24,13 +24,26 @@ When you run `degunk`, it groups build artifacts by project and surfaces safety 
 
 ## Installation
 
-### macOS and Linux
+### Homebrew (macOS and Linux)
+
+```bash
+brew install abdullahhassan192/tap/degunk
+```
+
+### Scoop (Windows)
+
+```powershell
+scoop bucket add degunk https://github.com/AbdullahHassan192/scoop-degunk
+scoop install degunk
+```
+
+### Shell script (macOS and Linux)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/AbdullahHassan192/degunk/main/scripts/install.sh | sh
 ```
 
-### Windows (PowerShell)
+### PowerShell (Windows)
 
 ```powershell
 irm https://raw.githubusercontent.com/AbdullahHassan192/degunk/main/scripts/install.ps1 | iex
