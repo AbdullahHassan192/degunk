@@ -2,6 +2,20 @@
 
 Developers lose tens of gigabytes of disk space to old `node_modules`, `venv`, `target`, and build caches in projects they haven't touched in months. `degunk` finds those discarded folders, shows you how long it's been since you committed to each repo, and lets you reclaim disk space safely.
 
+![degunk demo](assets/demo.gif)
+
+---
+
+## Understanding the dashboard
+
+When you run `degunk`, it groups build artifacts by project and surfaces safety information before you delete anything:
+
+* **Lockfile (`✓ Locked` vs `⚠ Missing`)**: Shows whether the project has a dependency lockfile (`package-lock.json`, `Cargo.lock`, `poetry.lock`, etc.). `✓ Locked` means you can safely delete the build folder and recreate the exact same environment later with your package manager. `⚠ Missing` warns you that reinstalling might resolve newer dependency versions.
+* **Git status (`✓ Clean` vs `⚠ Dirty`)**: `✓ Clean` means all changes are committed. `⚠ Dirty` warns you that uncommitted work exists in that repository, so you can check on your changes before clearing build outputs.
+* **Inactivity**: Measures how many days have passed since your last Git commit to that repo (for example, `Active today`, `90d ago`, `210d ago`). This helps you spot forgotten projects that are safe to clean.
+* **Projects vs Global caches**: Press `Tab` to switch between project build directories (`node_modules`, `target`, `.venv`) and central developer caches (`Cargo` registries, `Go` modules, `npm` cache, Playwright browsers, and local Ollama model weights).
+* **Trash vs Permanent delete**: Files move to your operating system's Recycle Bin or Trash by default, so you can restore anything you delete by accident.
+
 ---
 
 ## Installation
@@ -32,7 +46,7 @@ Precompiled standalone binaries for Windows (x86_64), macOS (Apple Silicon and I
 
 ## Quick start
 
-`degunk` is an interactive TUI dashboard. You can launch it directly or pass initial paths and filter arguments:
+Run `degunk` to open the interactive path picker, or scan folders directly:
 
 ```bash
 # Open the interactive path picker
@@ -53,18 +67,6 @@ degunk . --older-than 60
 # Filter by minimum artifact size
 degunk . --min-size 100MB
 ```
-
----
-
-## Features
-
-* **Interactive path launcher**: Running `degunk` opens a path picker with your common dev folders (`~/Projects`, `~/dev`), drives, and a custom path input with paste support.
-* **Project tree view**: Monorepos, mobile apps, and fullstack projects group multiple build targets under their project root. You can collapse and expand groups with `Enter` or `e`.
-* **Deep ecosystem coverage**: Scans 28 ecosystems including Node.js, Python, Rust, Go, Java/Kotlin, .NET, C/C++, Swift/iOS, Android/NDK, React Native/Expo, Unreal Engine, Embedded/PlatformIO, Flutter, Zig, Godot, Unity, Ruby, Scala, Haskell, OCaml, Terraform, R, Elm, Clojure, and Julia.
-* **Global developer caches**: Press `Tab` to see central caches like Cargo package checkouts, Go module caches, Playwright browser builds, npm, pnpm, pip, Gradle daemons, ccache, sccache, and local AI model weights (Ollama, LM Studio, HuggingFace).
-* **Git activity context**: Inspects each project's Git history to display days since your last commit, uncommitted local changes, and unpushed commits before you delete anything.
-* **Search filters**: Filter by ecosystem, size, age, or safety state using tokens like `eco:node`, `size:>500m`, `days:>60`, `git:clean`, or `locked:yes`.
-* **Safe deletion**: Moves files to your OS Trash or Recycle Bin by default, with an option for direct deletion. Handles read-only file locks on Windows and Unix cleanly.
 
 ---
 
@@ -100,6 +102,9 @@ Example: `/eco:python size:>100m days:>60 git:clean`
 
 ## Supported ecosystems and targets
 
+<details>
+<summary><b>View all 28 supported ecosystems and artifact directories</b></summary>
+
 | Ecosystem | Target folders | Key markers | Lockfile |
 | :--- | :--- | :--- | :--- |
 | **Node.js / Modern Web** | `node_modules`, `.next`, `.nuxt`, `.turbo`, `.svelte-kit`, `.angular`, `.astro`, `.parcel-cache`, `.vite`, `.output`, `.swc`, `.nitro`, `.wrangler`, `.vercel`, `.netlify`, `.sst`, `.cache`, `storybook-static` | `package.json`, `wrangler.toml`, `vercel.json`, `nitro.config.*`, etc. | `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `bun.lockb` |
@@ -131,13 +136,15 @@ Example: `/eco:python size:>100m days:>60 git:clean`
 | **Terraform / IaC** | `.terraform`, `.serverless`, `.aws-sam` | `*.tf`, `*.tofu`, `serverless.yml`, `samconfig.toml` | `.terraform.lock.hcl` |
 | **Coverage & Tests** | `coverage`, `.nyc_output`, `htmlcov`, `test-results`, `playwright-report`, `.playwright` | Project test runners & configs | N/A |
 
+</details>
+
 ---
 
 ## Global tool caches
 
 Press `Tab` in the TUI to inspect central tool caches that live outside your project folders:
 
-* **Package managers & registries**: Cargo checkouts and git registries, Go module cache (`GOPATH/pkg/mod`), npm, pnpm, Yarn, pip, uv, Bun, Pub, NuGet, Ruby gems, Coursier, vcpkg binary archives & download cache, Homebrew bottles, R renv cache.
+* **Package managers & registries**: Cargo checkouts and git registries, Go module cache (`GOPATH/pkg/mod`), npm, pnpm, Yarn, pip, uv, Bun, Pub, NuGet, Ruby gems, Coursier, vcpkg binary archives and download cache, Homebrew bottles, R renv cache.
 * **Compilers & build systems**: Go build cache, ccache, sccache, Rustup toolchains, Zig cache, Unreal Engine Global DDC, Gradle daemon logs and caches, Android build artifacts, Android emulator AVD images, Xcode DerivedData, CocoaPods, Terraform plugins, Docker Desktop WSL virtual disk (`ext4.vhdx`).
 * **Browser binaries**: Playwright standalone browser builds (Chromium, Firefox, WebKit), Cypress desktop binary cache.
 * **AI model weights**: Ollama models (`~/.ollama/models`), LM Studio, HuggingFace Hub, PyTorch Hub cache, Whisper weights.
