@@ -1,6 +1,6 @@
 [package]
 name = "degunk"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["Abdullah Hassan <abdullahch192@gmail.com>"]
 description = "A fast, interactive dependency and build artifact cleaner"
