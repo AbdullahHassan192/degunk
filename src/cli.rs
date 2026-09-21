@@ -7,7 +7,7 @@ use crate::core::ecosystem::Ecosystem;
 #[derive(Parser, Debug)]
 #[command(
     name = "degunk",
-    version = "0.1.0",
+    version,
     about = "A fast, interactive dependency and build artifact cleaner",
     long_about = "Degunk scans your projects for heavy, re-downloadable dependency and build directories\n(node_modules, .venv, target, etc.) and lets you reclaim disk space safely through an interactive TUI."
 )]
